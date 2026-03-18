@@ -169,8 +169,12 @@ impl<'a> Lexer<'a> {
                     if self.peek_char_and_not_consume(&mut chars, 1) == Some(':') {
                         // Pseudo-element
                         let mut pseudo_elem = String::new();
-                        pseudo_elem.push(chars.next().unwrap());
-                        pseudo_elem.push(chars.next().unwrap());
+
+                        // Skipping the double colon and store the pseudo-element name
+                        // to make the token value as clean as possible. The double colon can be
+                        // added later in the parser/code-generation phase.
+                        chars.next();
+                        chars.next();
                         self.update_column(&mut column, 2);
 
                         while let Some(&nc) = chars.peek() {
@@ -331,9 +335,24 @@ impl<'a> Lexer<'a> {
                 }
 
                 c if c.is_ascii_alphabetic() || c == '-' || c == '_' => {
+                    // check for type selector
+                    let type_selectors = vec![
+                        "html", "body", "div", "section", "article", "main", "header", "footer",
+                        "nav", "aside", "p", "span", "a", "form", "input", "button", "select",
+                        "textarea",
+                    ];
                     let ident = self.consume_selector(&mut chars, &mut line, &mut column);
 
-                    tokens.push(Token::new(TokenKind::Identifier, ident, line, start_column));
+                    if type_selectors.contains(&ident.as_str()) {
+                        tokens.push(Token::new(
+                            TokenKind::TypeSelector,
+                            ident,
+                            line,
+                            start_column,
+                        ));
+                    } else {
+                        tokens.push(Token::new(TokenKind::Identifier, ident, line, start_column));
+                    }
                 }
 
                 c if c.is_whitespace() => {
@@ -371,7 +390,7 @@ impl Token {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TokenKind {
     ParenOpen,
     ParenClose,
@@ -393,4 +412,232 @@ pub enum TokenKind {
     Semicolon,
     CurlyOpen,
     CurlyClose,
+}
+
+// should cover all the tokens
+mod tests {
+    use super::*;
+
+    #[allow(dead_code)]
+    /// Asserts that the given tokens contain the expected number of tokens of the given kind.
+    fn assert_eq_token_kind(tokens: &[Token], kind: &TokenKind, expected_count: usize) {
+        let count = tokens.iter().filter(|t| t.kind == *kind).count();
+        assert_eq!(count, expected_count);
+    }
+
+    #[allow(dead_code)]
+    /// Asserts that the given tokens contain the expected values for tokens of the given kind.
+    fn assert_eq_token_values(tokens: &[Token], kind: &TokenKind, expected_values: &[&str]) {
+        let matches: Vec<_> = tokens.iter().filter(|t| t.kind == *kind).collect();
+        assert_eq!(
+            matches.len(),
+            expected_values.len(),
+            "Unexpected number of tokens of kind {:?}",
+            kind
+        );
+
+        for (token, &expected) in matches.iter().zip(expected_values) {
+            assert_eq!(
+                token.value, expected,
+                "Unexpected value for token kind {:?}",
+                kind
+            );
+        }
+    }
+
+    #[allow(dead_code)]
+    /// Asserts that the given tokens contain a token of the given kind with the expected value.
+    fn assert_eq_token_value(tokens: &[Token], kind: &TokenKind, expected_value: &str) {
+        let matches: Vec<_> = tokens.iter().filter(|t| t.kind == *kind).collect();
+
+        assert!(
+            !matches.is_empty(),
+            "Expected at least one token of kind {:?}, but found none",
+            kind
+        );
+
+        assert_eq!(
+            matches[0].value, expected_value,
+            "Unexpected value for token kind {:?}",
+            kind
+        );
+    }
+
+    #[test]
+    fn test_line_and_column_positions_are_correct() {
+        let css = ".block {\n  color: red;\n}";
+        println!("{}", css);
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        let block = tokens
+            .iter()
+            .find(|t| t.kind == TokenKind::ClassSelector)
+            .unwrap();
+        assert_eq!(block.line, 1);
+        assert_eq!(block.column, 0);
+
+        let color = tokens
+            .iter()
+            .find(|t| t.kind == TokenKind::Identifier)
+            .unwrap();
+        assert_eq!(color.line, 2);
+        assert_eq!(color.column, 2);
+    }
+
+    #[test]
+    fn test_tokenize_identifier() {
+        let css = "a { color: rgb(255, 35, 105); }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_values(&tokens, &TokenKind::Identifier, &["color", "rgb"]);
+        assert_eq_token_kind(&tokens, &TokenKind::Identifier, 2);
+    }
+
+    #[test]
+    fn test_tokenize_class_selector() {
+        let css = ".block { width: 100%; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::ClassSelector, "block");
+        assert_eq_token_kind(&tokens, &TokenKind::ClassSelector, 1);
+    }
+
+    #[test]
+    fn test_tokenize_type_selector() {
+        let css = "html {  }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::TypeSelector, "html");
+        assert_eq_token_kind(&tokens, &TokenKind::TypeSelector, 1);
+    }
+
+    #[test]
+    fn test_tokenize_id_selector() {
+        let css = "#block { width: 100%; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::IdSelector, "block");
+        assert_eq_token_kind(&tokens, &TokenKind::IdSelector, 1);
+    }
+
+    #[test]
+    fn test_tokenize_pseudo_class() {
+        let css = ".block:hover { width: 100%; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::PseudoClass, "hover");
+        assert_eq_token_kind(&tokens, &TokenKind::PseudoClass, 1);
+    }
+
+    #[test]
+    fn test_tokenize_pseudo_element() {
+        let css = ".block::before { content: ''; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::PseudoElement, "before");
+        assert_eq_token_kind(&tokens, &TokenKind::PseudoElement, 1);
+    }
+
+    #[test]
+    fn test_tokenize_curly_braces() {
+        let css = "a { width: 100%; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::CurlyOpen, "{");
+        assert_eq_token_kind(&tokens, &TokenKind::CurlyOpen, 1);
+
+        assert_eq_token_value(&tokens, &TokenKind::CurlyClose, "}");
+        assert_eq_token_kind(&tokens, &TokenKind::CurlyClose, 1);
+    }
+
+    #[test]
+    fn test_tokenize_parentheses() {
+        let css = "a { color: rgb(255, 35, 105); width: calc(10 + 15px); }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::ParenOpen, "(");
+        assert_eq_token_kind(&tokens, &TokenKind::ParenOpen, 2);
+
+        assert_eq_token_value(&tokens, &TokenKind::ParenClose, ")");
+        assert_eq_token_kind(&tokens, &TokenKind::ParenClose, 2);
+    }
+
+    #[test]
+    fn test_tokenize_colon() {
+        let css = "a { width: 100%; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::Colon, ":");
+        assert_eq_token_kind(&tokens, &TokenKind::Colon, 1);
+    }
+
+    #[test]
+    fn test_tokenize_semicolon() {
+        let css = "a { width: 100%; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::Semicolon, ";");
+        assert_eq_token_kind(&tokens, &TokenKind::Semicolon, 1);
+    }
+
+    #[test]
+    fn test_tokenize_at_rule() {
+        let css = "@media (max-width: 768px) {  }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::AtRule, "media");
+        assert_eq_token_kind(&tokens, &TokenKind::AtRule, 1);
+    }
+
+    #[test]
+    fn test_tokenize_comment() {
+        let css = "/* comment */";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::Comment, "/* comment */");
+        assert_eq_token_kind(&tokens, &TokenKind::Comment, 1);
+    }
+
+    #[test]
+    fn test_tokenize_dimension() {
+        let css = "a { width: 100px; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::Dimension, "100px");
+        assert_eq_token_kind(&tokens, &TokenKind::Dimension, 1);
+    }
+
+    #[test]
+    fn test_tokenize_percentage() {
+        let css = "a { width: 100%; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_value(&tokens, &TokenKind::Percentage, "100%");
+        assert_eq_token_kind(&tokens, &TokenKind::Percentage, 1);
+    }
+
+    #[test]
+    fn test_tokenize_number() {
+        let css = "a { color: rgb(255, 35, 105); }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_values(&tokens, &TokenKind::Number, &["255", "35", "105"]);
+        assert_eq_token_kind(&tokens, &TokenKind::Number, 3);
+    }
 }
