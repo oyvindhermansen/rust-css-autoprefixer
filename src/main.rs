@@ -1,9 +1,11 @@
 use lexer::Lexer;
+use parser::Parser;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 
 mod lexer;
+mod parser;
 
 fn main() {
     let current_dir: PathBuf = env::current_dir().expect("Failed to get current dir");
@@ -15,9 +17,10 @@ fn main() {
             let lexer = Lexer::new(&content);
             let tokens = lexer.tokenize();
 
-            for token in tokens {
-                println!("{:?}({:?})", token.kind, token.value);
-            }
+            let mut parser = Parser::new(tokens);
+            let ast = parser.to_ast();
+
+            println!("{:?}", ast);
         }
         Err(e) => eprintln!("Error reading file at {:?}: {}", input_path, e),
     }
