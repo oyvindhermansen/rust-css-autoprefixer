@@ -324,8 +324,8 @@ impl<'a> Lexer<'a> {
                                     break;
                                 }
                             }
-                            num.push_str(&unit);
 
+                            num.push_str(&unit);
                             tokens.push(Token::new(TokenKind::Dimension, num, line, start_column));
                         }
                         _ => {
@@ -448,16 +448,17 @@ mod tests {
     #[allow(dead_code)]
     /// Asserts that the given tokens contain a token of the given kind with the expected value.
     fn assert_eq_token_value(tokens: &[Token], kind: &TokenKind, expected_value: &str) {
-        let matches: Vec<_> = tokens.iter().filter(|t| t.kind == *kind).collect();
+        let matched: Option<&Token> = tokens.iter().find(|t| t.kind == *kind);
 
         assert!(
-            !matches.is_empty(),
+            matched.is_some(),
             "Expected at least one token of kind {:?}, but found none",
             kind
         );
 
         assert_eq!(
-            matches[0].value, expected_value,
+            matched.unwrap().value,
+            expected_value,
             "Unexpected value for token kind {:?}",
             kind
         );
@@ -639,5 +640,34 @@ mod tests {
 
         assert_eq_token_values(&tokens, &TokenKind::Number, &["255", "35", "105"]);
         assert_eq_token_kind(&tokens, &TokenKind::Number, 3);
+    }
+
+    #[test]
+    fn test_tokenize_whole_input() {
+        let css = "a { width: 100px; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        // Check the correct order of tokens with the correct values
+        assert_eq!(tokens[0].kind, TokenKind::TypeSelector);
+        assert_eq!(tokens[0].value, "a");
+
+        assert_eq!(tokens[1].kind, TokenKind::CurlyOpen);
+        assert_eq!(tokens[1].value, "{");
+
+        assert_eq!(tokens[2].kind, TokenKind::Identifier);
+        assert_eq!(tokens[2].value, "width");
+
+        assert_eq!(tokens[3].kind, TokenKind::Colon);
+        assert_eq!(tokens[3].value, ":");
+
+        assert_eq!(tokens[4].kind, TokenKind::Dimension);
+        assert_eq!(tokens[4].value, "100px");
+
+        assert_eq!(tokens[5].kind, TokenKind::Semicolon);
+        assert_eq!(tokens[5].value, ";");
+
+        assert_eq!(tokens[6].kind, TokenKind::CurlyClose);
+        assert_eq!(tokens[6].value, "}");
     }
 }
