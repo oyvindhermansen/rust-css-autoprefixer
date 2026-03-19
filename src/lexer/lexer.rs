@@ -670,4 +670,13 @@ mod tests {
         assert_eq!(tokens[6].kind, TokenKind::CurlyClose);
         assert_eq!(tokens[6].value, "}");
     }
+
+    #[test]
+    fn test_tokenize_string() {
+      let css = "@import url(\"../styles.test\")";
+      let lexer = Lexer::new(css);
+      let tokens = lexer.tokenize();
+ 
+      assert_eq_token_kind(&tokens, &TokenKind::String, 1);
+    }
 }
