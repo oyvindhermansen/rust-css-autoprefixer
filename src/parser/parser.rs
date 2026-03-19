@@ -22,18 +22,207 @@ impl<'a> Parser {
         token
     }
 
-    pub fn to_ast(&mut self) -> AST {
-        let body: Vec<Node> = Vec::new();
+    fn expect(&mut self, kind: TokenKind) -> Option<&Token> {
+        if let Some(token) = self.peek() {
+            if token.kind == kind {
+                return self.advance();
+            }
+        }
 
-        while let Some(token) = self.advance() {
+        None
+    }
+
+    fn skip_whitespace(&mut self) {
+        while let Some(token) = self.peek() {
+            if token.kind == TokenKind::Whitespace {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn parse_rule(&mut self) -> Option<Node> {
+        let selector = self.parse_selector()?;
+        let block = self.parse_block()?;
+
+        let children: Vec<Node> = vec![block];
+
+        Some(Node {
+            _type: NodeKind::Rule { selector: selector },
+            line: 0,
+            column: 0,
+            children: Some(children),
+        })
+    }
+
+    fn parse_selector(&mut self) -> Option<String> {
+        let mut selector = String::new();
+
+        while let Some(token) = self.peek() {
             match token.kind {
+                TokenKind::CurlyOpen => break,
+                TokenKind::Whitespace => {
+                    selector.push(' ');
+                    self.advance();
+                }
                 _ => {
-                    println!("Unknown token: '{:?}'", token.kind)
+                    selector.push_str(&token.value);
+                    self.advance();
                 }
             }
         }
 
-        AST { body: body }
+        Some(selector.trim().to_string())
+    }
+
+    fn parse_block(&mut self) -> Option<Node> {
+        let mut children = Vec::new();
+
+        self.advance(); // Consume the curly open
+
+        while let Some(token) = self.peek() {
+            match token.kind {
+                TokenKind::CurlyClose => {
+                    self.advance();
+                    break;
+                }
+                TokenKind::Whitespace => {
+                    self.advance(); // just skip this, since we want to move to a block
+                }
+                _ => {
+                    if let Some(node) = self.parse_declaration() {
+                        children.push(node);
+                    } else {
+                        self.advance();
+                    }
+                }
+            }
+        }
+
+        Some(Node {
+            _type: NodeKind::Block,
+            line: 0,
+            column: 0,
+            children: Some(children),
+        })
+    }
+
+    fn parse_declaration(&mut self) -> Option<Node> {
+        let property = self.parse_property()?;
+        self.expect(TokenKind::Colon);
+        self.skip_whitespace();
+        let value = self.parse_value()?;
+        self.expect(TokenKind::Semicolon);
+
+        Some(Node {
+            _type: NodeKind::Declaration {
+                property: property,
+                value: value,
+            },
+            line: 0,
+            column: 0,
+            children: None,
+        })
+    }
+
+    fn parse_property(&mut self) -> Option<String> {
+        let mut val: String = String::new();
+
+        while let Some(token) = self.peek() {
+            match token.kind {
+                TokenKind::Identifier => {
+                    val.push_str(&token.value);
+                    self.advance();
+                    break;
+                }
+                _ => {
+                    return None;
+                }
+            }
+        }
+
+        Some(val)
+    }
+
+    fn parse_value(&mut self) -> Option<String> {
+        let mut val: String = String::new();
+
+        while let Some(token) = self.peek() {
+            match token.kind {
+                TokenKind::Identifier
+                | TokenKind::Dimension
+                | TokenKind::Number
+                | TokenKind::ParenOpen
+                | TokenKind::ParenClose
+                | TokenKind::Comma
+                | TokenKind::Percentage => {
+                    val.push_str(&token.value);
+                    self.advance();
+                }
+                TokenKind::Semicolon => break,
+                TokenKind::Whitespace => {
+                    val.push(' ');
+                    self.advance();
+                }
+                _ => break,
+            }
+        }
+
+        if val.trim().is_empty() {
+            None
+        } else {
+            Some(val.trim().to_string())
+        }
+    }
+
+    pub fn to_ast(&mut self) -> AST {
+        let mut body: Vec<Node> = Vec::new();
+
+        while let Some(token) = self.peek() {
+            let kind = token.kind.clone();
+            let token_value = token.value.clone();
+
+            match kind {
+                TokenKind::TypeSelector | TokenKind::ClassSelector | TokenKind::IdSelector => {
+                    println!(">>> Starting parse_rule at token: '{}'", token_value);
+                    if let Some(node) = self.parse_rule() {
+                        println!(">>> parse_rule succeeded");
+                        body.push(node);
+                    } else {
+                        println!(">>> parse_rule returned None!");
+                    }
+                }
+
+                TokenKind::AtRule => {
+                    self.advance();
+                    // skip everything until semicolon
+                    while let Some(token) = self.peek() {
+                        let kind = token.kind.clone();
+                        self.advance();
+
+                        if kind == TokenKind::Semicolon {
+                            break;
+                        }
+                    }
+                }
+
+                TokenKind::Whitespace => {
+                    self.advance();
+                }
+
+                TokenKind::Comment => {
+                    // TODO!
+                    self.advance();
+                }
+                _ => {
+                    self.advance();
+                    println!("Unknown token: '{:?}' value: '{}'", &kind, &token_value);
+                }
+            }
+        }
+
+        AST { body }
     }
 }
 
@@ -45,23 +234,16 @@ pub struct AST {
 #[derive(Debug)]
 struct Node {
     _type: NodeKind,
-    value: String,
+    // value: String,
     line: usize,
     column: usize,
     children: Option<Vec<Node>>,
 }
 
 impl Node {
-    pub fn new(
-        _type: NodeKind,
-        value: String,
-        line: usize,
-        column: usize,
-        children: Option<Vec<Node>>,
-    ) -> Self {
+    pub fn new(_type: NodeKind, line: usize, column: usize, children: Option<Vec<Node>>) -> Self {
         Self {
             _type,
-            value,
             line,
             column,
             children,
@@ -71,16 +253,17 @@ impl Node {
 
 #[derive(Debug, PartialEq)]
 enum NodeKind {
-    Rule,  // selectors + block + declarations
-    Block, // declarations inside curly brackets
+    Rule { selector: String },
+    Declaration { property: String, value: String },
+    AtRule { name: String, params: String },
+    Comment { text: String },
+    Block,
     Selector,
-    Declaration,
-    AtRule,
-    Comment,
 }
 
 mod tests {
     use super::*;
+    use crate::lexer::Lexer;
 
     #[test]
     fn test_to_ast_on_empty_tokens() {
@@ -92,48 +275,42 @@ mod tests {
     }
 
     #[test]
-    fn test_parser_node_rule() {
-        // Simulation an empty block
-        let tokens: Vec<Token> = vec![
-            Token {
-                kind: TokenKind::TypeSelector,
-                value: "div".to_string(),
-                line: 1,
-                column: 0,
-            },
-            Token {
-                kind: TokenKind::ClassSelector,
-                value: ".block".to_string(),
-                line: 1,
-                column: 0,
-            },
-            Token {
-                kind: TokenKind::CurlyOpen,
-                value: "{".to_string(),
-                line: 1,
-                column: 0,
-            },
-            Token {
-                kind: TokenKind::CurlyClose,
-                value: "}".to_string(),
-                line: 1,
-                column: 0,
-            },
-        ];
-
+    fn test_full_rule_with_declarations() {
+        let input = "#block > .child { color: red; font-size: 20px; }";
+        let tokens = Lexer::new(input).tokenize();
         let mut parser = Parser::new(tokens);
         let ast = parser.to_ast();
 
+        let rule = &ast.body[0];
+        let block = &rule.children.as_ref().unwrap()[0];
+        let key_value_pairs = &block.children.as_ref().unwrap();
+
         assert_eq!(ast.body.len(), 1);
-        assert_eq!(ast.body[0]._type, NodeKind::Rule);
-        assert_eq!(ast.body[0].children.is_some(), true);
+
         assert_eq!(
-            ast.body[0].children.as_ref().unwrap()[0]._type,
-            NodeKind::Block
+            rule._type,
+            NodeKind::Rule {
+                selector: "#block > .child".to_string()
+            }
         );
+        assert!(rule.children.is_some());
+        assert_eq!(block._type, NodeKind::Block);
+        assert!(block.children.is_some());
+
         assert_eq!(
-            ast.body[0].children.as_ref().unwrap()[0].children.is_none(),
-            true,
+            key_value_pairs[0]._type,
+            NodeKind::Declaration {
+                property: "color".to_string(),
+                value: "red".to_string()
+            }
+        );
+
+        assert_eq!(
+            key_value_pairs[1]._type,
+            NodeKind::Declaration {
+                property: "font-size".to_string(),
+                value: "20px".to_string()
+            }
         );
     }
 }

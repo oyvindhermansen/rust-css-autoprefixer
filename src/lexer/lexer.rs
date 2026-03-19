@@ -104,7 +104,12 @@ impl<'a> Lexer<'a> {
                     self.update_column(&mut column, 1);
                     let rule =
                         self.consume_into_string(&mut chars, &mut line, &mut column, Some(&[' ']));
-                    tokens.push(Token::new(TokenKind::AtRule, rule, line, start_column));
+                    tokens.push(Token::new(
+                        TokenKind::AtRule,
+                        format!("@{}", rule),
+                        line,
+                        start_column,
+                    ));
                 }
 
                 '/' if self.peek_char_and_not_consume(&mut chars, 1) == Some('*') => {
@@ -129,7 +134,7 @@ impl<'a> Lexer<'a> {
 
                     tokens.push(Token::new(
                         TokenKind::ClassSelector,
-                        selector,
+                        format!(".{}", selector),
                         line,
                         start_column,
                     ));
@@ -141,7 +146,7 @@ impl<'a> Lexer<'a> {
 
                     tokens.push(Token::new(
                         TokenKind::IdSelector,
-                        selector,
+                        format!("#{}", selector),
                         line,
                         start_column,
                     ));
@@ -191,7 +196,7 @@ impl<'a> Lexer<'a> {
 
                         tokens.push(Token::new(
                             TokenKind::PseudoElement,
-                            pseudo_elem,
+                            format!("::{}", pseudo_elem),
                             line,
                             start_column,
                         ));
@@ -215,7 +220,7 @@ impl<'a> Lexer<'a> {
 
                         tokens.push(Token::new(
                             TokenKind::PseudoClass,
-                            pseudo,
+                            format!(":{}", pseudo),
                             line,
                             start_column,
                         ));
@@ -359,6 +364,12 @@ impl<'a> Lexer<'a> {
                 }
 
                 c if c.is_whitespace() => {
+                    tokens.push(Token::new(
+                        TokenKind::Whitespace,
+                        c.to_string(),
+                        line,
+                        column,
+                    ));
                     chars.next();
                     self.update_column_and_line(c, &mut line, &mut column);
                 }
@@ -393,7 +404,7 @@ impl Token {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
     ParenOpen,
     ParenClose,
@@ -415,6 +426,7 @@ pub enum TokenKind {
     Semicolon,
     CurlyOpen,
     CurlyClose,
+    Whitespace,
 }
 
 // should cover all the tokens
@@ -505,7 +517,7 @@ mod tests {
         let lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
-        assert_eq_token_value(&tokens, &TokenKind::ClassSelector, "block");
+        assert_eq_token_value(&tokens, &TokenKind::ClassSelector, ".block");
         assert_eq_token_kind(&tokens, &TokenKind::ClassSelector, 1);
     }
 
@@ -525,7 +537,7 @@ mod tests {
         let lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
-        assert_eq_token_value(&tokens, &TokenKind::IdSelector, "block");
+        assert_eq_token_value(&tokens, &TokenKind::IdSelector, "#block");
         assert_eq_token_kind(&tokens, &TokenKind::IdSelector, 1);
     }
 
@@ -535,7 +547,7 @@ mod tests {
         let lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
-        assert_eq_token_value(&tokens, &TokenKind::PseudoClass, "hover");
+        assert_eq_token_value(&tokens, &TokenKind::PseudoClass, ":hover");
         assert_eq_token_kind(&tokens, &TokenKind::PseudoClass, 1);
     }
 
@@ -545,7 +557,7 @@ mod tests {
         let lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
-        assert_eq_token_value(&tokens, &TokenKind::PseudoElement, "before");
+        assert_eq_token_value(&tokens, &TokenKind::PseudoElement, "::before");
         assert_eq_token_kind(&tokens, &TokenKind::PseudoElement, 1);
     }
 
@@ -601,7 +613,7 @@ mod tests {
         let lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
-        assert_eq_token_value(&tokens, &TokenKind::AtRule, "media");
+        assert_eq_token_value(&tokens, &TokenKind::AtRule, "@media");
         assert_eq_token_kind(&tokens, &TokenKind::AtRule, 1);
     }
 
@@ -655,23 +667,31 @@ mod tests {
         assert_eq!(tokens[0].kind, TokenKind::TypeSelector);
         assert_eq!(tokens[0].value, "a");
 
-        assert_eq!(tokens[1].kind, TokenKind::CurlyOpen);
-        assert_eq!(tokens[1].value, "{");
+        assert_eq!(tokens[1].kind, TokenKind::Whitespace);
 
-        assert_eq!(tokens[2].kind, TokenKind::Identifier);
-        assert_eq!(tokens[2].value, "width");
+        assert_eq!(tokens[2].kind, TokenKind::CurlyOpen);
+        assert_eq!(tokens[2].value, "{");
 
-        assert_eq!(tokens[3].kind, TokenKind::Colon);
-        assert_eq!(tokens[3].value, ":");
+        assert_eq!(tokens[3].kind, TokenKind::Whitespace);
 
-        assert_eq!(tokens[4].kind, TokenKind::Dimension);
-        assert_eq!(tokens[4].value, "100px");
+        assert_eq!(tokens[4].kind, TokenKind::Identifier);
+        assert_eq!(tokens[4].value, "width");
 
-        assert_eq!(tokens[5].kind, TokenKind::Semicolon);
-        assert_eq!(tokens[5].value, ";");
+        assert_eq!(tokens[5].kind, TokenKind::Colon);
+        assert_eq!(tokens[5].value, ":");
 
-        assert_eq!(tokens[6].kind, TokenKind::CurlyClose);
-        assert_eq!(tokens[6].value, "}");
+        assert_eq!(tokens[6].kind, TokenKind::Whitespace);
+
+        assert_eq!(tokens[7].kind, TokenKind::Dimension);
+        assert_eq!(tokens[7].value, "100px");
+
+        assert_eq!(tokens[8].kind, TokenKind::Semicolon);
+        assert_eq!(tokens[8].value, ";");
+
+        assert_eq!(tokens[9].kind, TokenKind::Whitespace);
+
+        assert_eq!(tokens[10].kind, TokenKind::CurlyClose);
+        assert_eq!(tokens[10].value, "}");
     }
 
     #[test]
