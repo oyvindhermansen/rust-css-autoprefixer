@@ -4,6 +4,9 @@ use std::str::Chars;
 #[derive(Debug, Clone, Copy)]
 pub struct Lexer<'a> {
     pub input_str: &'a str,
+    // TODO! Add column and line as keys here, so that we can re-implement
+    // the peek and advance methods here, and don't need to pass all the
+    // arguments around at all times.
 }
 
 impl<'a> Lexer<'a> {
@@ -673,10 +676,10 @@ mod tests {
 
     #[test]
     fn test_tokenize_string() {
-      let css = "@import url(\"../styles.test\")";
-      let lexer = Lexer::new(css);
-      let tokens = lexer.tokenize();
- 
-      assert_eq_token_kind(&tokens, &TokenKind::String, 1);
+        let css = "@import url(\"../styles.test\")";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq_token_kind(&tokens, &TokenKind::String, 1);
     }
 }
