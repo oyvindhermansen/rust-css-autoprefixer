@@ -32,6 +32,13 @@ impl<'a> Parser {
         None
     }
 
+    fn get_position(&self) -> (usize, usize) {
+        match self.peek() {
+            Some(token) => (token.line, token.column),
+            None => (0, 0),
+        }
+    }
+
     fn skip_whitespace(&mut self) {
         while let Some(token) = self.peek() {
             if token.kind == TokenKind::Whitespace {
@@ -43,16 +50,48 @@ impl<'a> Parser {
     }
 
     fn parse_rule(&mut self) -> Option<Node> {
+        let (line, column) = self.get_position();
         let selector = self.parse_selector()?;
-        let block = self.parse_block()?;
-        let children: Vec<Node> = vec![block];
+        let children = self.parse_block(BlockContext::Rule)?;
 
         Some(Node {
             _type: NodeKind::Rule { selector: selector },
-            line: 0,
-            column: 0,
+            line: line,
+            column: column,
             children: Some(children),
         })
+    }
+
+    fn parse_at_rule(&mut self) -> Option<Node> {
+        let (line, column) = self.get_position();
+        let name = self.advance()?.value.clone();
+        self.skip_whitespace();
+        let params = self.parse_at_rule_params();
+
+        match self.peek()?.kind {
+            TokenKind::Semicolon => {
+                self.advance();
+
+                Some(Node {
+                    _type: NodeKind::AtRule { name, params },
+                    line: line,
+                    column: column,
+                    children: None, // No children on a at rule that ends with semi colon
+                })
+            }
+
+            TokenKind::CurlyOpen => {
+                let children = self.parse_block(BlockContext::AtRule)?;
+
+                Some(Node {
+                    _type: NodeKind::AtRule { name, params },
+                    line: line,
+                    column: column,
+                    children: Some(children),
+                })
+            }
+            _ => None,
+        }
     }
 
     fn parse_selector(&mut self) -> Option<String> {
@@ -75,7 +114,7 @@ impl<'a> Parser {
         Some(selector.trim().to_string())
     }
 
-    fn parse_block(&mut self) -> Option<Node> {
+    fn parse_block(&mut self, context: BlockContext) -> Option<Vec<Node>> {
         let mut children = Vec::new();
 
         self.advance(); // Consume the curly open
@@ -90,8 +129,12 @@ impl<'a> Parser {
                     self.advance(); // just skip this, since we want to move to a block
                 }
                 _ => {
-                    if let Some(node) = self.parse_declaration() {
-                        children.push(node);
+                    let node = match context {
+                        BlockContext::Rule => self.parse_declaration(),
+                        BlockContext::AtRule => self.parse_rule(),
+                    };
+                    if let Some(n) = node {
+                        children.push(n);
                     } else {
                         self.advance();
                     }
@@ -99,18 +142,16 @@ impl<'a> Parser {
             }
         }
 
-        Some(Node {
-            _type: NodeKind::Block,
-            line: 0,
-            column: 0,
-            children: Some(children),
-        })
+        Some(children)
     }
 
     fn parse_declaration(&mut self) -> Option<Node> {
+        let (line, column) = self.get_position();
         let property = self.parse_property()?;
+
         self.expect(TokenKind::Colon);
         self.skip_whitespace();
+
         let value = self.parse_value()?;
         self.expect(TokenKind::Semicolon);
 
@@ -119,8 +160,8 @@ impl<'a> Parser {
                 property: property,
                 value: value,
             },
-            line: 0,
-            column: 0,
+            line: line,
+            column: column,
             children: None,
         })
     }
@@ -175,11 +216,46 @@ impl<'a> Parser {
         }
     }
 
-    // TODO!
-    pub fn parse_at_rule() {}
+    fn parse_at_rule_params(&mut self) -> String {
+        let mut params = String::new();
 
-    // TODO!
-    pub fn parse_at_rule_params() {}
+        while let Some(token) = self.peek() {
+            match token.kind {
+                TokenKind::CurlyOpen | TokenKind::Semicolon => break,
+                TokenKind::Whitespace => {
+                    params.push(' ');
+                    self.advance();
+                }
+                _ => {
+                    params.push_str(&token.value);
+                    self.advance();
+                }
+            }
+        }
+
+        params.trim().to_string()
+    }
+
+    fn parse_comment(&mut self) -> Option<Node> {
+        let (line, column) = self.get_position();
+
+        if let Some(token) = self.peek() {
+            let text = token.value.clone();
+
+            if token.kind == TokenKind::Comment {
+                self.advance();
+
+                return Some(Node {
+                    _type: NodeKind::Comment { text: text },
+                    line: line,
+                    column: column,
+                    children: None,
+                });
+            }
+        }
+
+        None
+    }
 
     pub fn to_ast(&mut self) -> AST {
         let mut body: Vec<Node> = Vec::new();
@@ -196,16 +272,8 @@ impl<'a> Parser {
                 }
 
                 TokenKind::AtRule => {
-                    self.advance();
-                    // skip everything until semicolon
-                    while let Some(token) = self.peek() {
-                        let kind = token.kind.clone();
-
-                        self.advance();
-
-                        if kind == TokenKind::Semicolon {
-                            break;
-                        }
+                    if let Some(node) = self.parse_at_rule() {
+                        body.push(node);
                     }
                 }
 
@@ -214,8 +282,9 @@ impl<'a> Parser {
                 }
 
                 TokenKind::Comment => {
-                    // TODO!
-                    self.advance();
+                    if let Some(comment) = self.parse_comment() {
+                        body.push(comment);
+                    }
                 }
                 _ => {
                     self.advance();
@@ -258,8 +327,12 @@ enum NodeKind {
     Declaration { property: String, value: String },
     AtRule { name: String, params: String },
     Comment { text: String },
-    Block,
-    Selector,
+}
+
+#[derive(PartialEq)]
+enum BlockContext {
+    Rule,   // contains declarations
+    AtRule, // contains rules
 }
 
 mod tests {
@@ -283,8 +356,7 @@ mod tests {
         let ast = parser.to_ast();
 
         let rule = &ast.body[0];
-        let block = &rule.children.as_ref().unwrap()[0];
-        let key_value_pairs = &block.children.as_ref().unwrap();
+        let declarations = &rule.children.as_ref().unwrap();
 
         assert_eq!(ast.body.len(), 1);
 
@@ -295,11 +367,8 @@ mod tests {
             }
         );
         assert!(rule.children.is_some());
-        assert_eq!(block._type, NodeKind::Block);
-        assert!(block.children.is_some());
-
         assert_eq!(
-            key_value_pairs[0]._type,
+            declarations[0]._type,
             NodeKind::Declaration {
                 property: "color".to_string(),
                 value: "red".to_string()
@@ -307,7 +376,7 @@ mod tests {
         );
 
         assert_eq!(
-            key_value_pairs[1]._type,
+            declarations[1]._type,
             NodeKind::Declaration {
                 property: "font-size".to_string(),
                 value: "20px".to_string()
@@ -324,8 +393,7 @@ mod tests {
         let ast = parser.to_ast();
 
         let rule = &ast.body[0];
-        let block = &rule.children.as_ref().unwrap()[0];
-        let declaration = &block.children.as_ref().unwrap()[0];
+        let declarations = &rule.children.as_ref().unwrap();
 
         assert_eq!(
             rule._type,
@@ -334,11 +402,9 @@ mod tests {
             }
         );
         assert!(rule.children.is_some());
-        assert_eq!(block._type, NodeKind::Block);
-        assert!(block.children.is_some());
 
         assert_eq!(
-            declaration._type,
+            declarations[0]._type,
             NodeKind::Declaration {
                 property: "color".to_string(),
                 value: "blue".to_string()
@@ -352,19 +418,14 @@ mod tests {
         let lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
-        for token in &tokens {
-            println!("{:?}", token)
-        }
-
         let mut parser = Parser::new(tokens);
         let ast = parser.to_ast();
 
         let rule = &ast.body[0];
-        let block = &rule.children.as_ref().unwrap()[0];
-        let declaration = &block.children.as_ref().unwrap()[0];
+        let declarations = &rule.children.as_ref().unwrap();
 
         assert_eq!(
-            declaration._type,
+            declarations[0]._type,
             NodeKind::Declaration {
                 property: "background-color".to_string(),
                 value: "rgba(255, 0, 0, 0.5)".to_string()
@@ -374,27 +435,73 @@ mod tests {
 
     #[test]
     fn test_parse_at_rule() {
-        let css = "@media all and (min-width: 767px) { .block: { color: blue; } }";
+        let css = "@media (min-width: 767px) { .block { color: blue; } }";
         let lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
-
-        for token in &tokens {
-            println!("{:?}", token)
-        }
 
         let mut parser = Parser::new(tokens);
         let ast = parser.to_ast();
 
-        let rule = &ast.body[0];
-        let block = &rule.children.as_ref().unwrap()[0];
-        let declaration = &block.children.as_ref().unwrap()[0];
+        let at_rule = &ast.body[0];
+        let inner_rule = &at_rule.children.as_ref().unwrap()[0];
+        let declarations = &inner_rule.children.as_ref().unwrap();
 
         assert_eq!(
-            declaration._type,
-            NodeKind::Declaration {
-                property: "background-color".to_string(),
-                value: "rgba(255, 0, 0, 0.5)".to_string()
+            at_rule._type,
+            NodeKind::AtRule {
+                name: "@media".to_string(),
+                params: "(min-width: 767px)".to_string()
             }
         );
+
+        assert_eq!(
+            declarations[0]._type,
+            NodeKind::Declaration {
+                property: "color".to_string(),
+                value: "blue".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_comment() {
+        let css = "/* This is a comment */ .block { color: red; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+
+        let comment = &ast.body[0];
+
+        assert_eq!(
+            comment._type,
+            NodeKind::Comment {
+                text: "/* This is a comment */".to_string()
+            }
+        );
+
+        assert_eq!(ast.body.len(), 2);
+    }
+
+    #[test]
+    fn test_line_and_column_positions_is_correct() {
+        let css = "/* This is a comment */ \n.block { \n color: red; \n}";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+
+        let comment = &ast.body[0];
+        let rule = &ast.body[1];
+        let declaration = &rule.children.as_ref().unwrap()[0]; // direct!
+
+        assert_eq!(comment.line, 1);
+        assert_eq!(comment.column, 0);
+        assert_eq!(rule.line, 2);
+        assert_eq!(rule.column, 0);
+        assert_eq!(declaration.line, 3);
+        assert_eq!(declaration.column, 1);
     }
 }
