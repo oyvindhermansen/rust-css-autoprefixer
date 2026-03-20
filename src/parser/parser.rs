@@ -45,7 +45,6 @@ impl<'a> Parser {
     fn parse_rule(&mut self) -> Option<Node> {
         let selector = self.parse_selector()?;
         let block = self.parse_block()?;
-
         let children: Vec<Node> = vec![block];
 
         Some(Node {
@@ -185,12 +184,8 @@ impl<'a> Parser {
 
             match kind {
                 TokenKind::TypeSelector | TokenKind::ClassSelector | TokenKind::IdSelector => {
-                    println!(">>> Starting parse_rule at token: '{}'", token_value);
                     if let Some(node) = self.parse_rule() {
-                        println!(">>> parse_rule succeeded");
                         body.push(node);
-                    } else {
-                        println!(">>> parse_rule returned None!");
                     }
                 }
 
@@ -199,6 +194,7 @@ impl<'a> Parser {
                     // skip everything until semicolon
                     while let Some(token) = self.peek() {
                         let kind = token.kind.clone();
+
                         self.advance();
 
                         if kind == TokenKind::Semicolon {
@@ -310,6 +306,88 @@ mod tests {
             NodeKind::Declaration {
                 property: "font-size".to_string(),
                 value: "20px".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_complex_selector() {
+        let css: &str = "div:hover > form:nth-child(2) { color: blue; }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+
+        let rule = &ast.body[0];
+        let block = &rule.children.as_ref().unwrap()[0];
+        let declaration = &block.children.as_ref().unwrap()[0];
+
+        assert_eq!(
+            rule._type,
+            NodeKind::Rule {
+                selector: "div:hover > form:nth-child(2)".to_string()
+            }
+        );
+        assert!(rule.children.is_some());
+        assert_eq!(block._type, NodeKind::Block);
+        assert!(block.children.is_some());
+
+        assert_eq!(
+            declaration._type,
+            NodeKind::Declaration {
+                property: "color".to_string(),
+                value: "blue".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_property_and_value() {
+        let css = ".block { background-color: rgba(255, 0, 0, 0.5); }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        for token in &tokens {
+            println!("{:?}", token)
+        }
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+
+        let rule = &ast.body[0];
+        let block = &rule.children.as_ref().unwrap()[0];
+        let declaration = &block.children.as_ref().unwrap()[0];
+
+        assert_eq!(
+            declaration._type,
+            NodeKind::Declaration {
+                property: "background-color".to_string(),
+                value: "rgba(255, 0, 0, 0.5)".to_string()
+            }
+        );
+    }
+
+    fn test_parse_at_rule() {
+        let css = "@media all and (min-width: 767px) { .block: { color: blue; } }";
+        let lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        for token in &tokens {
+            println!("{:?}", token)
+        }
+
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+
+        let rule = &ast.body[0];
+        let block = &rule.children.as_ref().unwrap()[0];
+        let declaration = &block.children.as_ref().unwrap()[0];
+
+        assert_eq!(
+            declaration._type,
+            NodeKind::Declaration {
+                property: "background-color".to_string(),
+                value: "rgba(255, 0, 0, 0.5)".to_string()
             }
         );
     }
