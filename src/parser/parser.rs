@@ -54,12 +54,12 @@ impl<'a> Parser {
         let selector = self.parse_selector()?;
         let children = self.parse_block(BlockContext::Rule)?;
 
-        Some(Node {
-            _type: NodeKind::Rule { selector: selector },
-            line: line,
-            column: column,
-            children: Some(children),
-        })
+        Some(Node::new(
+            NodeKind::Rule { selector: selector },
+            line,
+            column,
+            Some(children),
+        ))
     }
 
     fn parse_at_rule(&mut self) -> Option<Node> {
@@ -72,23 +72,23 @@ impl<'a> Parser {
             TokenKind::Semicolon => {
                 self.advance();
 
-                Some(Node {
-                    _type: NodeKind::AtRule { name, params },
-                    line: line,
-                    column: column,
-                    children: None, // No children on a at rule that ends with semi colon
-                })
+                Some(Node::new(
+                    NodeKind::AtRule { name, params },
+                    line,
+                    column,
+                    None, // No children on a at rule that ends with semi colon
+                ))
             }
 
             TokenKind::CurlyOpen => {
                 let children = self.parse_block(BlockContext::AtRule)?;
 
-                Some(Node {
-                    _type: NodeKind::AtRule { name, params },
-                    line: line,
-                    column: column,
-                    children: Some(children),
-                })
+                Some(Node::new(
+                    NodeKind::AtRule { name, params },
+                    line,
+                    column,
+                    Some(children),
+                ))
             }
             _ => None,
         }
@@ -155,15 +155,15 @@ impl<'a> Parser {
         let value = self.parse_value()?;
         self.expect(TokenKind::Semicolon);
 
-        Some(Node {
-            _type: NodeKind::Declaration {
+        Some(Node::new(
+            NodeKind::Declaration {
                 property: property,
                 value: value,
             },
-            line: line,
-            column: column,
-            children: None,
-        })
+            line,
+            column,
+            None,
+        ))
     }
 
     fn parse_property(&mut self) -> Option<String> {
@@ -245,12 +245,12 @@ impl<'a> Parser {
             if token.kind == TokenKind::Comment {
                 self.advance();
 
-                return Some(Node {
-                    _type: NodeKind::Comment { text: text },
-                    line: line,
-                    column: column,
-                    children: None,
-                });
+                return Some(Node::new(
+                    NodeKind::Comment { text: text },
+                    line,
+                    column,
+                    None,
+                ));
             }
         }
 
@@ -299,15 +299,15 @@ impl<'a> Parser {
 
 #[derive(Debug)]
 pub struct AST {
-    body: Vec<Node>,
+    pub body: Vec<Node>,
 }
 
 #[derive(Debug)]
-struct Node {
-    _type: NodeKind,
-    line: usize,
-    column: usize,
-    children: Option<Vec<Node>>,
+pub struct Node {
+    pub _type: NodeKind,
+    pub line: usize,
+    pub column: usize,
+    pub children: Option<Vec<Node>>,
 }
 
 impl Node {
@@ -322,7 +322,7 @@ impl Node {
 }
 
 #[derive(Debug, PartialEq)]
-enum NodeKind {
+pub enum NodeKind {
     Rule { selector: String },
     Declaration { property: String, value: String },
     AtRule { name: String, params: String },

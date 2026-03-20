@@ -1,9 +1,11 @@
+use generator::Generator;
 use lexer::Lexer;
 use parser::Parser;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+mod generator;
 mod lexer;
 mod parser;
 
@@ -20,7 +22,10 @@ fn main() {
             let mut parser = Parser::new(tokens);
             let ast = parser.to_ast();
 
-            println!("{:?}", ast);
+            let generator = Generator::new(ast);
+            let output = generator.generate();
+
+            println!("{}", output);
         }
         Err(e) => eprintln!("Error reading file at {:?}: {}", input_path, e),
     }
