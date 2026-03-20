@@ -236,7 +236,6 @@ pub struct AST {
 #[derive(Debug)]
 struct Node {
     _type: NodeKind,
-    // value: String,
     line: usize,
     column: usize,
     children: Option<Vec<Node>>,
