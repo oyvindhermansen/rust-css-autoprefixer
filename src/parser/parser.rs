@@ -175,6 +175,12 @@ impl<'a> Parser {
         }
     }
 
+    // TODO!
+    pub fn parse_at_rule() {}
+
+    // TODO!
+    pub fn parse_at_rule_params() {}
+
     pub fn to_ast(&mut self) -> AST {
         let mut body: Vec<Node> = Vec::new();
 
@@ -367,6 +373,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn test_parse_at_rule() {
         let css = "@media all and (min-width: 767px) { .block: { color: blue; } }";
         let lexer = Lexer::new(css);
