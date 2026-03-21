@@ -22,10 +22,10 @@ fn main() {
             let mut parser = Parser::new(tokens);
             let ast = parser.to_ast();
 
-            let generator = Generator::new(ast);
+            let mut generator = Generator::new(ast);
             let output = generator.generate();
 
-            println!("{}", output);
+            println!("{:#?}", output);
         }
         Err(e) => eprintln!("Error reading file at {:?}: {}", input_path, e),
     }

@@ -2,15 +2,37 @@ use crate::parser::parser::{AST, Node, NodeKind};
 
 pub struct Generator {
     ast: AST,
+    indent: usize,
 }
 
 impl Generator {
     pub fn new(ast: AST) -> Self {
-        Self { ast }
+        Self { ast, indent: 0 }
     }
 
-    fn generate_rule(&self, node: &Node, selector: &str) -> String {
-        "".to_string()
+    fn generate_rule(&mut self, node: &Node, selector: &str) -> String {
+        let mut output = String::new();
+
+        output.push_str(selector);
+        output.push(' ');
+        output.push('{');
+
+        if node.line == 0 {
+            output.push('\n');
+        }
+
+        if let Some(children) = &node.children {
+            self.indent += 4;
+
+            for child in children {
+                output.push_str(&self.generate_node(&child));
+            }
+        }
+
+        self.indent -= 4;
+        output.push('}');
+
+        output
     }
 
     fn generate_at_rule(&self, node: &Node, name: &str, params: &str) -> String {
@@ -22,10 +44,14 @@ impl Generator {
     }
 
     fn generate_comment(&self, node: &Node, text: &str) -> String {
-        "".to_string()
+        let mut output = String::new();
+
+        output.push_str(text);
+
+        output
     }
 
-    fn generate_node(&self, node: &Node) -> String {
+    fn generate_node(&mut self, node: &Node) -> String {
         match &node._type {
             NodeKind::Rule { selector } => self.generate_rule(node, selector),
             NodeKind::AtRule { name, params } => self.generate_at_rule(node, name, params),
@@ -36,13 +62,83 @@ impl Generator {
         }
     }
 
-    pub fn generate(&self) -> String {
+    // This is where the prefix-mapping takes place, and will be a source of truth going
+    // forward in prefixing properties within a NodeKind::Declaration
+    fn prefix_property(&self, property: &str) -> &'static [&'static str] {
+        match property {
+            // Mask properties - still need -webkit- in Chrome/Safari
+            "mask" | "mask-image" | "mask-mode" | "mask-repeat" | "mask-position" | "mask-clip"
+            | "mask-origin" | "mask-size" | "mask-composite" | "mask-border" => &["-webkit-"],
+
+            // Text emphasis - needs -webkit- in some browsers
+            "text-emphasis"
+            | "text-emphasis-position"
+            | "text-emphasis-style"
+            | "text-emphasis-color" => &["-webkit-"],
+
+            // Appearance - still widely needed
+            "appearance" => &["-webkit-", "-moz-"],
+
+            // Backdrop filter - Safari still requires -webkit-
+            "backdrop-filter" => &["-webkit-"],
+
+            // Print color adjust
+            "print-color-adjust" => &["-webkit-"],
+
+            // Tab size - needs -moz-
+            "tab-size" => &["-moz-"],
+
+            // clip-path - webkit still useful for older Safari
+            "clip-path" => &["-webkit-"],
+
+            // These are legacy - included for older browser support
+            "transition" => &["-webkit-"],
+            "transform" => &["-webkit-"],
+            "animation" => &["-webkit-"],
+            "animation-name"
+            | "animation-duration"
+            | "animation-timing-function"
+            | "animation-delay"
+            | "animation-iteration-count"
+            | "animation-direction"
+            | "animation-fill-mode"
+            | "animation-play-state" => &["-webkit-"],
+
+            _ => &[],
+        }
+    }
+
+    pub fn generate(&mut self) -> String {
         let mut output = String::new();
 
-        for node in &self.ast.body {
-            output.push_str(&self.generate_node(&node));
+        let body = self.ast.body.clone();
+        for node in body {
+            let node_str = &self.generate_node(&node);
+            output.push_str(node_str);
         }
 
         output
+    }
+}
+
+mod tests {
+    use crate::{lexer::Lexer, parser::Parser};
+
+    use super::*;
+
+    #[test]
+    fn test_generate_rule() {
+        let css = "/* Styles file */\n \n.container { \nwidth: 100%; \n}";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+        let mut generator = Generator::new(ast);
+        let output = generator.generate();
+
+        assert_eq!(
+            output,
+            "/* Styles file */\n \n.container { \nwidth: 100%; \n}"
+        );
     }
 }

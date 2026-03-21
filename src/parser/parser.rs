@@ -302,7 +302,7 @@ pub struct AST {
     pub body: Vec<Node>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node {
     pub _type: NodeKind,
     pub line: usize,
@@ -321,7 +321,7 @@ impl Node {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum NodeKind {
     Rule { selector: String },
     Declaration { property: String, value: String },
