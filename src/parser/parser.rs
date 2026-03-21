@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn test_complex_selector() {
         let css: &str = "div:hover > form:nth-child(2) { color: blue; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
         let ast = parser.to_ast();
@@ -415,7 +415,7 @@ mod tests {
     #[test]
     fn test_parse_property_and_value() {
         let css = ".block { background-color: rgba(255, 0, 0, 0.5); }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         let mut parser = Parser::new(tokens);
@@ -436,7 +436,7 @@ mod tests {
     #[test]
     fn test_parse_at_rule() {
         let css = "@media (min-width: 767px) { .block { color: blue; } }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         let mut parser = Parser::new(tokens);
@@ -466,7 +466,7 @@ mod tests {
     #[test]
     fn test_parse_comment() {
         let css = "/* This is a comment */ .block { color: red; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         let mut parser = Parser::new(tokens);
@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn test_line_and_column_positions_is_correct() {
         let css = "/* This is a comment */ \n.block { \n color: red; \n}";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         let mut parser = Parser::new(tokens);
