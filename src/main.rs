@@ -16,7 +16,7 @@ fn main() {
 
     match file_content {
         Ok(content) => {
-            let lexer = Lexer::new(&content);
+            let mut lexer = Lexer::new(&content);
             let tokens = lexer.tokenize();
 
             let mut parser = Parser::new(tokens);

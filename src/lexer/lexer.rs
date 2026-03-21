@@ -1,343 +1,302 @@
-use std::iter::Peekable;
-use std::str::Chars;
-
 #[derive(Debug, Clone, Copy)]
 pub struct Lexer<'a> {
     pub input_str: &'a str,
-    // TODO! Add column and line as keys here, so that we can re-implement
-    // the peek and advance methods here, and don't need to pass all the
-    // arguments around at all times.
+    line_count: usize,
+    column_count: usize,
+    current: usize,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input_str: &'a str) -> Self {
-        Self { input_str }
+        Self {
+            input_str,
+            line_count: 1,
+            column_count: 0,
+            current: 0,
+        }
     }
 
-    fn update_column(&self, column: &mut usize, amount: usize) {
-        *column += amount;
+    fn peek(&self) -> Option<char> {
+        self.input_str[self.current..].chars().next()
     }
 
-    fn update_line(&self, line: &mut usize, amount: usize) {
-        *line += amount;
+    fn peek_next(&self) -> Option<char> {
+        let mut chars = self.input_str[self.current..].chars();
+
+        chars.next(); // skip current
+        chars.next() // return next
     }
 
-    fn update_column_and_line(&self, c: char, line: &mut usize, column: &mut usize) {
+    fn advance(&mut self) -> Option<char> {
+        let c = self.peek()?;
+        self.current += c.len_utf8();
+
         if c == '\n' {
-            self.update_line(line, 1);
-            *column = 0;
+            self.line_count += 1;
+            self.column_count = 0;
         } else {
-            self.update_column(column, c.len_utf8());
+            self.column_count += c.len_utf8();
         }
+
+        Some(c)
     }
 
-    fn peek_char_and_not_consume(
-        &self,
-        chars: &mut Peekable<Chars<'_>>,
-        offset: usize,
-    ) -> Option<char> {
-        chars.clone().nth(offset)
-    }
-
-    fn consume_next_and_update_column(
-        &self,
-        chars: &mut Peekable<Chars<'_>>,
-        column: &mut usize,
-        times: usize,
-    ) {
-        for _ in 0..times {
-            if let Some(c) = chars.next() {
-                self.update_column_and_line(c, &mut 0, column);
-            }
-        }
-    }
-
-    fn consume_into_string(
-        &self,
-        chars: &mut Peekable<Chars<'_>>,
-        line: &mut usize,
-        column: &mut usize,
-        stop_at: Option<&[char]>,
-    ) -> String {
+    fn consume_into_string(&mut self, stop_at: Option<&[char]>) -> String {
         let mut value = String::new();
 
-        while let Some(&c) = chars.peek() {
+        while let Some(c) = self.peek() {
             if let Some(stops) = stop_at {
                 if stops.contains(&c) {
                     break;
                 }
             }
 
-            chars.next();
+            self.advance();
             value.push(c);
-
-            self.update_column_and_line(c, line, column);
         }
+
         value
     }
 
-    fn consume_selector(
-        &self,
-        chars: &mut Peekable<Chars<'_>>,
-        line: &mut usize,
-        column: &mut usize,
-    ) -> String {
+    fn consume_selector(&mut self) -> String {
         let delimiters = [
             ' ', '{', '}', ';', ':', '.', '#', '(', ')', ',', '+', '>', '~',
         ];
 
-        self.consume_into_string(chars, line, column, Some(&delimiters))
+        self.consume_into_string(Some(&delimiters))
     }
 
-    pub fn tokenize(&self) -> Vec<Token> {
+    pub fn tokenize(&mut self) -> Vec<Token> {
         let mut tokens = Vec::new();
-        let mut chars = self.input_str.chars().peekable();
-        let mut line = 1;
-        let mut column = 0;
 
-        while let Some(&c) = chars.peek() {
-            let start_column = column;
+        while let Some(c) = self.peek() {
+            let start_line = self.line_count;
+            let start_column = self.column_count;
 
             match c {
                 '@' => {
-                    chars.next();
-                    self.update_column(&mut column, 1);
-                    let rule =
-                        self.consume_into_string(&mut chars, &mut line, &mut column, Some(&[' ']));
+                    self.advance();
+                    let rule = self.consume_into_string(Some(&[' ']));
+
                     tokens.push(Token::new(
                         TokenKind::AtRule,
                         format!("@{}", rule),
-                        line,
+                        start_line,
                         start_column,
                     ));
                 }
 
-                '/' if self.peek_char_and_not_consume(&mut chars, 1) == Some('*') => {
-                    self.consume_next_and_update_column(&mut chars, &mut column, 2);
-                    let comment =
-                        self.consume_into_string(&mut chars, &mut line, &mut column, Some(&['*']));
-                    if chars.peek() == Some(&'/') {
-                        self.consume_next_and_update_column(&mut chars, &mut column, 1);
-                    }
+                '/' if self.peek_next() == Some('*') => {
+                    self.advance();
+                    self.advance();
+                    let comment = self.consume_into_string(Some(&['*']));
+
+                    self.advance();
+                    self.advance();
 
                     tokens.push(Token::new(
                         TokenKind::Comment,
                         format!("/*{}*/", comment),
-                        line,
+                        start_line,
                         start_column,
                     ));
                 }
 
                 '.' => {
-                    self.consume_next_and_update_column(&mut chars, &mut column, 1);
-                    let selector = self.consume_selector(&mut chars, &mut line, &mut column);
+                    self.advance();
+                    let selector = self.consume_selector();
 
                     tokens.push(Token::new(
                         TokenKind::ClassSelector,
                         format!(".{}", selector),
-                        line,
+                        start_line,
                         start_column,
                     ));
                 }
 
                 '#' => {
-                    self.consume_next_and_update_column(&mut chars, &mut column, 1);
-                    let selector = self.consume_selector(&mut chars, &mut line, &mut column);
+                    self.advance();
+                    let selector = self.consume_selector();
 
                     tokens.push(Token::new(
                         TokenKind::IdSelector,
                         format!("#{}", selector),
-                        line,
+                        start_line,
                         start_column,
                     ));
                 }
 
                 '{' => {
-                    self.consume_next_and_update_column(&mut chars, &mut column, 1);
+                    self.advance();
 
                     tokens.push(Token::new(
                         TokenKind::CurlyOpen,
                         "{".to_string(),
-                        line,
+                        start_line,
                         start_column,
                     ));
                 }
                 '}' => {
-                    self.consume_next_and_update_column(&mut chars, &mut column, 1);
+                    self.advance();
 
                     tokens.push(Token::new(
                         TokenKind::CurlyClose,
                         "}".to_string(),
-                        line,
+                        start_line,
                         start_column,
                     ));
                 }
 
                 ':' => {
-                    if self.peek_char_and_not_consume(&mut chars, 1) == Some(':') {
-                        // Pseudo-element
-                        let mut pseudo_elem = String::new();
+                    if self.peek_next() == Some(':') {
+                        // Since we got second ':' we know it's a pseudo selector
+                        self.advance();
+                        self.advance();
 
-                        // Skipping the double colon and store the pseudo-element name
-                        // to make the token value as clean as possible. The double colon can be
-                        // added later in the parser/code-generation phase.
-                        chars.next();
-                        chars.next();
-                        self.update_column(&mut column, 2);
-
-                        while let Some(&nc) = chars.peek() {
-                            if nc.is_ascii_alphanumeric() || nc == '-' {
-                                pseudo_elem.push(chars.next().unwrap());
-                                self.update_column(&mut column, 1);
-                            } else {
-                                break;
-                            }
-                        }
+                        let name = self.consume_selector();
 
                         tokens.push(Token::new(
                             TokenKind::PseudoElement,
-                            format!("::{}", pseudo_elem),
-                            line,
+                            format!("::{}", name),
+                            start_line,
                             start_column,
                         ));
                     } else if self
-                        .peek_char_and_not_consume(&mut chars, 1)
+                        .peek_next()
                         .map_or(false, |nc| nc.is_ascii_alphabetic())
                     {
-                        // Pseudo-class
-                        let mut pseudo = String::new();
-                        chars.next();
-                        self.update_column(&mut column, 1);
-
-                        while let Some(&nc) = chars.peek() {
-                            if nc.is_ascii_alphanumeric() || nc == '-' {
-                                pseudo.push(chars.next().unwrap());
-                                self.update_column(&mut column, 1);
-                            } else {
-                                break;
-                            }
-                        }
+                        self.advance();
+                        let name = self.consume_selector();
 
                         tokens.push(Token::new(
                             TokenKind::PseudoClass,
-                            format!(":{}", pseudo),
-                            line,
+                            format!(":{}", name),
+                            start_line,
                             start_column,
                         ));
                     } else {
-                        // Single colon
-                        chars.next();
-                        self.update_column(&mut column, 1);
+                        self.advance();
+
                         tokens.push(Token::new(
                             TokenKind::Colon,
                             ":".to_string(),
-                            line,
+                            start_line,
                             start_column,
                         ));
                     }
                 }
 
                 ';' => {
-                    self.consume_next_and_update_column(&mut chars, &mut column, 1);
+                    self.advance();
                     tokens.push(Token::new(
                         TokenKind::Semicolon,
                         ";".to_string(),
-                        line,
+                        start_line,
                         start_column,
                     ));
                 }
                 '(' => {
-                    self.consume_next_and_update_column(&mut chars, &mut column, 1);
+                    self.advance();
+
                     tokens.push(Token::new(
                         TokenKind::ParenOpen,
                         "(".to_string(),
-                        line,
+                        start_line,
                         start_column,
                     ));
                 }
                 ')' => {
-                    self.consume_next_and_update_column(&mut chars, &mut column, 1);
+                    self.advance();
+
                     tokens.push(Token::new(
                         TokenKind::ParenClose,
                         ")".to_string(),
-                        line,
+                        start_line,
                         start_column,
                     ));
                 }
                 ',' => {
-                    self.consume_next_and_update_column(&mut chars, &mut column, 1);
+                    self.advance();
+
                     tokens.push(Token::new(
                         TokenKind::Comma,
                         ",".to_string(),
-                        line,
+                        start_line,
                         start_column,
                     ));
                 }
                 '"' => {
-                    chars.next();
-                    self.update_column(&mut column, 1);
-                    let val =
-                        self.consume_into_string(&mut chars, &mut line, &mut column, Some(&['"']));
-                    if chars.peek() == Some(&'"') {
-                        chars.next();
-                        self.update_column(&mut column, 1);
-                    }
-                    tokens.push(Token::new(TokenKind::String, val, line, start_column));
-                }
+                    self.advance();
+                    let val = self.consume_into_string(Some(&['"']));
 
-                '%' => {
-                    self.consume_next_and_update_column(&mut chars, &mut column, 1);
-                    tokens.push(Token::new(
-                        TokenKind::Percentage,
-                        "%".to_string(),
-                        line,
-                        start_column,
-                    ));
+                    if self.peek() == Some('"') {
+                        self.advance();
+                    }
+
+                    tokens.push(Token::new(TokenKind::String, val, start_line, start_column));
                 }
                 '+' | '>' | '~' => {
-                    self.consume_next_and_update_column(&mut chars, &mut column, 1);
+                    self.advance();
+
                     tokens.push(Token::new(
                         TokenKind::Combinator,
                         c.to_string(),
-                        line,
+                        start_line,
                         start_column,
                     ));
                 }
 
                 c if c.is_ascii_digit() || c == '.' => {
                     let mut num = String::new();
-                    while let Some(&nc) = chars.peek() {
+
+                    while let Some(nc) = self.peek() {
                         if nc.is_ascii_digit() || nc == '.' {
-                            num.push(chars.next().unwrap());
-                            self.update_column(&mut column, 1);
+                            num.push(nc);
+                            self.advance();
                         } else {
                             break;
                         }
                     }
 
-                    match chars.peek() {
+                    match self.peek() {
                         Some('%') => {
-                            num.push(chars.next().unwrap());
-                            self.update_column(&mut column, 1);
+                            num.push('%');
+                            self.advance();
 
-                            tokens.push(Token::new(TokenKind::Percentage, num, line, start_column));
+                            tokens.push(Token::new(
+                                TokenKind::Percentage,
+                                num,
+                                start_line,
+                                start_column,
+                            ));
                         }
                         Some(nc) if nc.is_ascii_alphabetic() => {
                             let mut unit = String::new();
-                            while let Some(&nc) = chars.peek() {
+
+                            while let Some(nc) = self.peek() {
                                 if nc.is_ascii_alphabetic() {
-                                    unit.push(chars.next().unwrap());
-                                    self.update_column(&mut column, 1);
+                                    unit.push(nc);
+                                    self.advance();
                                 } else {
                                     break;
                                 }
                             }
 
                             num.push_str(&unit);
-                            tokens.push(Token::new(TokenKind::Dimension, num, line, start_column));
+                            tokens.push(Token::new(
+                                TokenKind::Dimension,
+                                num,
+                                start_line,
+                                start_column,
+                            ));
                         }
                         _ => {
-                            tokens.push(Token::new(TokenKind::Number, num, line, start_column));
+                            tokens.push(Token::new(
+                                TokenKind::Number,
+                                num,
+                                start_line,
+                                start_column,
+                            ));
                         }
                     }
                 }
@@ -349,17 +308,22 @@ impl<'a> Lexer<'a> {
                         "nav", "aside", "p", "span", "a", "form", "input", "button", "select",
                         "textarea",
                     ];
-                    let ident = self.consume_selector(&mut chars, &mut line, &mut column);
+                    let ident = self.consume_selector();
 
                     if type_selectors.contains(&ident.as_str()) {
                         tokens.push(Token::new(
                             TokenKind::TypeSelector,
                             ident,
-                            line,
+                            start_line,
                             start_column,
                         ));
                     } else {
-                        tokens.push(Token::new(TokenKind::Identifier, ident, line, start_column));
+                        tokens.push(Token::new(
+                            TokenKind::Identifier,
+                            ident,
+                            start_line,
+                            start_column,
+                        ));
                     }
                 }
 
@@ -367,16 +331,15 @@ impl<'a> Lexer<'a> {
                     tokens.push(Token::new(
                         TokenKind::Whitespace,
                         c.to_string(),
-                        line,
-                        column,
+                        start_line,
+                        start_column,
                     ));
-                    chars.next();
-                    self.update_column_and_line(c, &mut line, &mut column);
+
+                    self.advance();
                 }
 
                 _ => {
-                    chars.next();
-                    self.update_column(&mut column, 1);
+                    self.advance();
                 }
             }
         }
@@ -483,7 +446,7 @@ mod tests {
     fn test_line_and_column_positions_are_correct() {
         let css = ".block {\n  color: red;\n}";
         println!("{}", css);
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         let block = tokens
@@ -504,7 +467,7 @@ mod tests {
     #[test]
     fn test_tokenize_identifier() {
         let css = "a { color: rgb(255, 35, 105); }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_values(&tokens, &TokenKind::Identifier, &["color", "rgb"]);
@@ -514,7 +477,7 @@ mod tests {
     #[test]
     fn test_tokenize_class_selector() {
         let css = ".block { width: 100%; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::ClassSelector, ".block");
@@ -524,7 +487,7 @@ mod tests {
     #[test]
     fn test_tokenize_type_selector() {
         let css = "html {  }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::TypeSelector, "html");
@@ -534,7 +497,7 @@ mod tests {
     #[test]
     fn test_tokenize_id_selector() {
         let css = "#block { width: 100%; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::IdSelector, "#block");
@@ -544,7 +507,7 @@ mod tests {
     #[test]
     fn test_tokenize_pseudo_class() {
         let css = ".block:hover { width: 100%; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::PseudoClass, ":hover");
@@ -554,7 +517,7 @@ mod tests {
     #[test]
     fn test_tokenize_pseudo_element() {
         let css = ".block::before { content: ''; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::PseudoElement, "::before");
@@ -564,7 +527,7 @@ mod tests {
     #[test]
     fn test_tokenize_curly_braces() {
         let css = "a { width: 100%; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::CurlyOpen, "{");
@@ -577,7 +540,7 @@ mod tests {
     #[test]
     fn test_tokenize_parentheses() {
         let css = "a { color: rgb(255, 35, 105); width: calc(10 + 15px); }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::ParenOpen, "(");
@@ -590,7 +553,7 @@ mod tests {
     #[test]
     fn test_tokenize_colon() {
         let css = "a { width: 100%; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::Colon, ":");
@@ -600,7 +563,7 @@ mod tests {
     #[test]
     fn test_tokenize_semicolon() {
         let css = "a { width: 100%; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::Semicolon, ";");
@@ -610,7 +573,7 @@ mod tests {
     #[test]
     fn test_tokenize_at_rule() {
         let css = "@media (max-width: 768px) {  }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::AtRule, "@media");
@@ -620,7 +583,7 @@ mod tests {
     #[test]
     fn test_tokenize_comment() {
         let css = "/* comment */";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::Comment, "/* comment */");
@@ -630,7 +593,7 @@ mod tests {
     #[test]
     fn test_tokenize_dimension() {
         let css = "a { width: 100px; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::Dimension, "100px");
@@ -640,7 +603,7 @@ mod tests {
     #[test]
     fn test_tokenize_percentage() {
         let css = "a { width: 100%; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_value(&tokens, &TokenKind::Percentage, "100%");
@@ -650,7 +613,7 @@ mod tests {
     #[test]
     fn test_tokenize_number() {
         let css = "a { color: rgb(255, 35, 105); }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_values(&tokens, &TokenKind::Number, &["255", "35", "105"]);
@@ -660,7 +623,7 @@ mod tests {
     #[test]
     fn test_tokenize_whole_input() {
         let css = "a { width: 100px; }";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         // Check the correct order of tokens with the correct values
@@ -697,7 +660,7 @@ mod tests {
     #[test]
     fn test_tokenize_string() {
         let css = "@import url(\"../styles.test\")";
-        let lexer = Lexer::new(css);
+        let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
 
         assert_eq_token_kind(&tokens, &TokenKind::String, 1);
