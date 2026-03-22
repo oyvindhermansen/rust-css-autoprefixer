@@ -233,7 +233,14 @@ impl<'a> Lexer<'a> {
                         self.advance();
                     }
 
-                    tokens.push(Token::new(TokenKind::String, val, start_line, start_column));
+                    let escaped_val = format!("\"{val}\"");
+
+                    tokens.push(Token::new(
+                        TokenKind::String,
+                        escaped_val,
+                        start_line,
+                        start_column,
+                    ));
                 }
                 '+' | '>' | '~' => {
                     self.advance();

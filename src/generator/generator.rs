@@ -13,40 +13,97 @@ impl Generator {
     fn generate_rule(&mut self, node: &Node, selector: &str) -> String {
         let mut output = String::new();
 
-        output.push_str(selector);
-        output.push(' ');
-        output.push('{');
+        // Start with indenting if needed.
+        output.push_str(&" ".repeat(self.indent));
 
-        if node.line == 0 {
-            output.push('\n');
-        }
+        // Start pushing the selector to the string
+        output.push_str(selector);
+
+        // Format some space between selector and curlyOpen.
+        output.push_str(" {");
+        output.push('\n');
+
+        self.indent += 2;
 
         if let Some(children) = &node.children {
-            self.indent += 4;
-
             for child in children {
                 output.push_str(&self.generate_node(&child));
             }
         }
 
-        self.indent -= 4;
+        self.indent -= 2;
+
+        output.push_str(&" ".repeat(self.indent));
         output.push('}');
+        output.push('\n');
+
+        if self.indent == 0 {
+            output.push('\n');
+        }
 
         output
     }
 
-    fn generate_at_rule(&self, node: &Node, name: &str, params: &str) -> String {
-        "".to_string()
+    fn generate_at_rule(&mut self, node: &Node, name: &str, params: &str) -> String {
+        let mut output = String::new();
+
+        // Start with indenting if needed.
+        output.push_str(&" ".repeat(self.indent));
+
+        // Start pushing the selector to the string
+        output.push_str(format!("{name} {params}").as_str());
+
+        if node.children.is_none() {
+            output.push(';');
+        }
+
+        if let Some(children) = &node.children {
+            output.push_str(" {");
+            output.push('\n');
+
+            self.indent += 2;
+
+            for child in children {
+                output.push_str(&self.generate_node(&child));
+            }
+
+            self.indent -= 2;
+            output.push_str(&" ".repeat(self.indent));
+            output.push('}');
+            output.push('\n');
+        }
+
+        output.push('\n');
+
+        output
     }
 
     fn generate_declaration(&self, node: &Node, property: &str, value: &str) -> String {
-        "".to_string()
+        let mut output: String = String::new();
+
+        // setup for prefixing
+        let vendor_prefixes = self.prefix_property(property);
+
+        if !vendor_prefixes.is_empty() {
+            for prefix in vendor_prefixes {
+                output.push_str(&" ".repeat(self.indent));
+                output.push_str(format!("{prefix}{property}: {value};").as_str());
+                output.push('\n');
+            }
+        }
+
+        output.push_str(&" ".repeat(self.indent));
+        output.push_str(format!("{property}: {value};").as_str());
+        output.push('\n');
+
+        output
     }
 
-    fn generate_comment(&self, node: &Node, text: &str) -> String {
+    fn generate_comment(&mut self, node: &Node, text: &str) -> String {
         let mut output = String::new();
 
         output.push_str(text);
+        output.push('\n');
 
         output
     }
@@ -127,8 +184,65 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_generate_rule() {
-        let css = "/* Styles file */\n \n.container { \nwidth: 100%; \n}";
+    fn test_generate_basic_rule() {
+        let css = ".block { color: red; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+        let mut generator = Generator::new(ast);
+        let output = generator.generate();
+
+        assert_eq!(output, ".block {\n  color: red;\n}\n\n");
+    }
+
+    #[test]
+    fn test_generate_comment() {
+        let css = "/* my comment */";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+        let mut generator = Generator::new(ast);
+        let output = generator.generate();
+        // assert the comment appears with a trailing newline
+        assert_eq!(output, "/* my comment */\n");
+    }
+
+    #[test]
+    fn test_generate_prefixes_transition() {
+        let css = ".row { transition: 0.5s ease-in; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+        let mut generator = Generator::new(ast);
+        let output = generator.generate();
+
+        // assert -webkit-transition appears BEFORE transition
+        assert_eq!(
+            output,
+            ".row {\n  -webkit-transition: 0.5s ease-in;\n  transition: 0.5s ease-in;\n}\n\n"
+        );
+    }
+
+    #[test]
+    fn test_generate_at_rule_statement() {
+        let css = "@import url(\"styles.css\");";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+        let mut generator = Generator::new(ast);
+        let output = generator.generate();
+
+        // assert the at rule is output correctly
+        assert_eq!(output, "@import url(\"styles.css\");\n");
+    }
+
+    #[test]
+    fn test_generate_at_rule_block() {
+        let css = "@media screen { .block { color: red; } }";
         let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
@@ -138,7 +252,7 @@ mod tests {
 
         assert_eq!(
             output,
-            "/* Styles file */\n \n.container { \nwidth: 100%; \n}"
+            "@media screen {\n  .block {\n    color: red;\n  }\n}\n\n"
         );
     }
 }
