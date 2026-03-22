@@ -29,3 +29,11 @@ form::after,
 #container + .row {
   display: grid;
 }
+
+input[type="text"] {
+  tab-size: 1;
+}
+
+form[data-what="hello world"] {
+  background-color: salmon;
+}

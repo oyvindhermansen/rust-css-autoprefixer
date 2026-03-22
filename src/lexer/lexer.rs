@@ -60,7 +60,7 @@ impl<'a> Lexer<'a> {
 
     fn consume_selector(&mut self) -> String {
         let delimiters = [
-            ' ', '{', '}', ';', ':', '.', '#', '(', ')', ',', '+', '>', '~',
+            ' ', '{', '}', ';', ':', '.', '#', '(', ')', ',', '+', '>', '~', '[', ']', '=',
         ];
 
         self.consume_into_string(Some(&delimiters))
@@ -97,6 +97,39 @@ impl<'a> Lexer<'a> {
                     tokens.push(Token::new(
                         TokenKind::Comment,
                         format!("/*{}*/", comment),
+                        start_line,
+                        start_column,
+                    ));
+                }
+
+                '[' => {
+                    self.advance();
+
+                    tokens.push(Token::new(
+                        TokenKind::BracketOpen,
+                        "[".to_string(),
+                        start_line,
+                        start_column,
+                    ));
+                }
+
+                ']' => {
+                    self.advance();
+
+                    tokens.push(Token::new(
+                        TokenKind::BracketClose,
+                        "]".to_string(),
+                        start_line,
+                        start_column,
+                    ));
+                }
+
+                '=' => {
+                    self.advance();
+
+                    tokens.push(Token::new(
+                        TokenKind::Equals,
+                        "=".to_string(),
                         start_line,
                         start_column,
                     ));
@@ -376,8 +409,11 @@ impl Token {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
+    Equals,
     ParenOpen,
     ParenClose,
+    BracketOpen,
+    BracketClose,
     AtRule,
     Comment,
     Identifier,
@@ -671,5 +707,30 @@ mod tests {
         let tokens = lexer.tokenize();
 
         assert_eq_token_kind(&tokens, &TokenKind::String, 1);
+    }
+
+    #[test]
+    fn test_tokenize_attribute_selector() {
+        let css = "input[type=\"text\"] { color: blue; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq!(tokens[0].kind, TokenKind::TypeSelector);
+        assert_eq!(tokens[0].value, "input");
+
+        assert_eq!(tokens[1].kind, TokenKind::BracketOpen);
+        assert_eq!(tokens[1].value, "[");
+
+        assert_eq!(tokens[2].kind, TokenKind::Identifier);
+        assert_eq!(tokens[2].value, "type");
+
+        assert_eq!(tokens[3].kind, TokenKind::Equals);
+        assert_eq!(tokens[3].value, "=");
+
+        assert_eq!(tokens[4].kind, TokenKind::String);
+        assert_eq!(tokens[4].value, "\"text\"");
+
+        assert_eq!(tokens[5].kind, TokenKind::BracketClose);
+        assert_eq!(tokens[5].value, "]");
     }
 }
