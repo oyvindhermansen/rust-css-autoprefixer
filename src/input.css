@@ -1,39 +1,140 @@
-@import url("styles.css");
-
-div:hover > form:nth-child(2) {
-  color: blue;
+/* Base reset and typography */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
-/*
- Dette er en kommentar som går på flere linjer.
- Håper dette går fint å kjøre gjennom en prefixer?!
- Det burde det i alle fall
-*/
+html {
+  tab-size: 4;
+  print-color-adjust: exact;
+}
 
-header,
-form::before,
-form::after,
+body {
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+/* Layout */
 .container {
   width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-.block {
-  color: red;
-  background-color: rgba(255, 0, 0, 0.5);
+.flex-row {
+  display: flex;
+  appearance: none;
 }
 
-.row {
-  transition: 0.5s ease-in;
-}
-
-#container + .row {
+.grid-layout {
   display: grid;
+  gap: 1rem;
 }
 
-input[type="text"] {
-  tab-size: 1;
+/* Transitions and transforms */
+.card {
+  transform: translateY(0);
+  transition:
+    transform 0.3s ease,
+    opacity 0.3s ease;
+  backdrop-filter: blur(10px);
 }
 
-form[data-what="hello world"] {
-  background-color: salmon;
+.card:hover {
+  transform: translateY(-4px);
+}
+
+.card::before {
+  content: "";
+  display: block;
+}
+
+/* Animations */
+.spinner {
+  animation: spin 1s linear infinite;
+  animation-fill-mode: both;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Masking */
+.avatar {
+  mask-image: url("mask.svg");
+  mask-size: cover;
+  clip-path: circle(50%);
+}
+
+/* Complex selectors */
+nav > ul > li:first-child a:hover {
+  text-emphasis: filled red;
+  text-emphasis-position: over right;
+}
+
+form input[type="text"],
+form input[type="email"],
+form textarea {
+  appearance: none;
+  transition: border-color 0.2s ease;
+}
+
+#main > .content + .sidebar {
+  backdrop-filter: saturate(1.8) blur(20px);
+}
+
+.parent > .child ~ .sibling:nth-child(2) {
+  transform: scale(1.05);
+  transition: transform 0.2s ease-in-out;
+}
+
+/* Media queries */
+@media (max-width: 768px) {
+  .container {
+    padding: 0 1rem;
+  }
+
+  .card {
+    transform: none;
+    transition: opacity 0.2s ease;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .grid-layout {
+    gap: 0.5rem;
+  }
+
+  .flex-row {
+    appearance: none;
+    transition: all 0.3s ease;
+  }
+}
+
+@media print {
+  .spinner {
+    animation: none;
+    print-color-adjust: exact;
+  }
+}
+
+/* Pseudo elements and classes */
+.button:focus-visible {
+  clip-path: inset(0 round 4px);
+  outline: 2px solid blue;
+}
+
+.text::selection {
+  text-emphasis-color: blue;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  transform: scale(1.2);
 }

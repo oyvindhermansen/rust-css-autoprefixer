@@ -256,23 +256,44 @@ impl<'a> Lexer<'a> {
                         start_column,
                     ));
                 }
-                '"' => {
+
+                '\'' => {
                     self.advance();
-                    let val = self.consume_into_string(Some(&['"']));
-
-                    if self.peek() == Some('"') {
-                        self.advance();
-                    }
-
-                    let escaped_val = format!("\"{val}\"");
+                    let val = self.consume_into_string(Some(&['\'']));
+                    self.advance();
 
                     tokens.push(Token::new(
                         TokenKind::String,
-                        escaped_val,
+                        format!("'{val}'"),
                         start_line,
                         start_column,
                     ));
                 }
+
+                '"' => {
+                    self.advance();
+                    let val = self.consume_into_string(Some(&['"']));
+                    self.advance();
+
+                    tokens.push(Token::new(
+                        TokenKind::String,
+                        format!("\"{val}\""),
+                        start_line,
+                        start_column,
+                    ));
+                }
+
+                '*' => {
+                    self.advance();
+
+                    tokens.push(Token::new(
+                        TokenKind::UniversalSelector,
+                        c.to_string(),
+                        start_line,
+                        start_column,
+                    ));
+                }
+
                 '+' | '>' | '~' => {
                     self.advance();
 
@@ -419,6 +440,7 @@ pub enum TokenKind {
     ClassSelector,
     IdSelector,
     TypeSelector,
+    UniversalSelector,
     PseudoClass,
     PseudoElement,
     Combinator,
@@ -792,5 +814,16 @@ mod tests {
 
         assert_eq!(tokens[5].kind, TokenKind::BracketClose);
         assert_eq!(tokens[5].value, "]");
+    }
+
+    #[test]
+    fn test_tokenize_single_quoted_string() {
+        let css = ".block { content: ''; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        let string_token = tokens.iter().find(|t| t.kind == TokenKind::String).unwrap();
+
+        assert_eq!(string_token.value, "''");
     }
 }

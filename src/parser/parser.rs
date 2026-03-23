@@ -11,50 +11,56 @@ impl<'a> Parser {
         Self { tokens, current: 0 }
     }
 
-    fn peek(&self) -> Option<&Token> {
-        self.tokens.get(self.current)
+    fn peek(&self) -> Result<&Token, ParseError> {
+        let peek_token = self.tokens.get(self.current);
+
+        peek_token.ok_or(ParseError::UnexpectedEOF)
     }
 
-    fn advance(&mut self) -> Option<&Token> {
-        let token = self.tokens.get(self.current);
+    fn advance(&mut self) -> Result<&Token, ParseError> {
+        let token = self
+            .tokens
+            .get(self.current)
+            .ok_or(ParseError::UnexpectedEOF)?;
+
         self.current += 1;
 
-        token
+        Ok(token)
     }
 
-    fn expect(&mut self, kind: TokenKind) -> Option<&Token> {
-        if let Some(token) = self.peek() {
+    fn expect(&mut self, kind: TokenKind) -> Result<&Token, ParseError> {
+        if let Ok(token) = self.peek() {
             if token.kind == kind {
                 return self.advance();
             }
         }
 
-        None
+        Err(ParseError::UnexpectedEOF)
     }
 
     fn get_position(&self) -> (usize, usize) {
         match self.peek() {
-            Some(token) => (token.line, token.column),
-            None => (0, 0),
+            Ok(token) => (token.line, token.column),
+            Err(_) => (0, 0),
         }
     }
 
     fn skip_whitespace(&mut self) {
-        while let Some(token) = self.peek() {
+        while let Ok(token) = self.peek() {
             if token.kind == TokenKind::Whitespace {
-                self.advance();
+                let _ = self.advance();
             } else {
                 break;
             }
         }
     }
 
-    fn parse_rule(&mut self) -> Option<Node> {
+    fn parse_rule(&mut self) -> Result<Node, ParseError> {
         let (line, column) = self.get_position();
         let selector = self.parse_selector()?;
         let children = self.parse_block(BlockContext::Rule)?;
 
-        Some(Node::new(
+        Ok(Node::new(
             NodeKind::Rule { selector: selector },
             line,
             column,
@@ -62,7 +68,7 @@ impl<'a> Parser {
         ))
     }
 
-    fn parse_at_rule(&mut self) -> Option<Node> {
+    fn parse_at_rule(&mut self) -> Result<Node, ParseError> {
         let (line, column) = self.get_position();
         let name = self.advance()?.value.clone();
         self.skip_whitespace();
@@ -70,9 +76,9 @@ impl<'a> Parser {
 
         match self.peek()?.kind {
             TokenKind::Semicolon => {
-                self.advance();
+                self.advance()?;
 
-                Some(Node::new(
+                Ok(Node::new(
                     NodeKind::AtRule { name, params },
                     line,
                     column,
@@ -83,81 +89,89 @@ impl<'a> Parser {
             TokenKind::CurlyOpen => {
                 let children = self.parse_block(BlockContext::AtRule)?;
 
-                Some(Node::new(
+                Ok(Node::new(
                     NodeKind::AtRule { name, params },
                     line,
                     column,
                     Some(children),
                 ))
             }
-            _ => None,
+            _ => Err(ParseError::UnexpectedEOF),
         }
     }
 
-    fn parse_selector(&mut self) -> Option<String> {
-        println!("parse_selector starting, current token: {:?}", self.peek());
+    fn parse_selector(&mut self) -> Result<String, ParseError> {
+        let (line, column) = self.get_position();
         let mut selector = String::new();
 
-        while let Some(token) = self.peek() {
+        while let Ok(token) = self.peek() {
             match token.kind {
                 TokenKind::CurlyOpen => break,
                 TokenKind::Whitespace => {
                     selector.push(' ');
-                    self.advance();
+                    self.advance()?;
                 }
                 _ => {
-                    println!("consuming token: {:?}", token.kind);
                     selector.push_str(&token.value);
-                    self.advance();
+                    self.advance()?;
                 }
             }
         }
 
-        Some(selector.trim().to_string())
+        let trimmed_selector = selector.trim().to_string();
+
+        if trimmed_selector.is_empty() {
+            Err(ParseError::InvalidSelector {
+                line: line,
+                column: column,
+            })
+        } else {
+            Ok(trimmed_selector)
+        }
     }
 
-    fn parse_block(&mut self, context: BlockContext) -> Option<Vec<Node>> {
+    fn parse_block(&mut self, context: BlockContext) -> Result<Vec<Node>, ParseError> {
         let mut children = Vec::new();
 
-        self.advance(); // Consume the curly open
+        self.advance()?;
 
-        while let Some(token) = self.peek() {
+        while let Ok(token) = self.peek() {
             match token.kind {
                 TokenKind::CurlyClose => {
-                    self.advance();
+                    self.advance()?;
                     break;
                 }
                 TokenKind::Whitespace => {
-                    self.advance(); // just skip this, since we want to move to a block
+                    self.advance()?;
                 }
                 _ => {
                     let node = match context {
                         BlockContext::Rule => self.parse_declaration(),
                         BlockContext::AtRule => self.parse_rule(),
                     };
-                    if let Some(n) = node {
+                    if let Ok(n) = node {
                         children.push(n);
                     } else {
-                        self.advance();
+                        self.advance()?;
                     }
                 }
             }
         }
 
-        Some(children)
+        Ok(children)
     }
 
-    fn parse_declaration(&mut self) -> Option<Node> {
+    fn parse_declaration(&mut self) -> Result<Node, ParseError> {
         let (line, column) = self.get_position();
         let property = self.parse_property()?;
 
-        self.expect(TokenKind::Colon);
+        self.expect(TokenKind::Colon)?;
         self.skip_whitespace();
 
         let value = self.parse_value()?;
-        self.expect(TokenKind::Semicolon);
+        self.expect(TokenKind::Semicolon)?;
 
-        Some(Node::new(
+        Ok(Node::new(
             NodeKind::Declaration {
                 property: property,
                 value: value,
@@ -168,29 +182,30 @@ impl<'a> Parser {
         ))
     }
 
-    fn parse_property(&mut self) -> Option<String> {
+    fn parse_property(&mut self) -> Result<String, ParseError> {
         let mut val: String = String::new();
 
-        while let Some(token) = self.peek() {
+        while let Ok(token) = self.peek() {
             match token.kind {
                 TokenKind::Identifier => {
                     val.push_str(&token.value);
-                    self.advance();
+                    self.advance()?;
                     break;
                 }
                 _ => {
-                    return None;
+                    return Err(ParseError::UnexpectedEOF);
                 }
             }
         }
 
-        Some(val)
+        Ok(val)
     }
 
-    fn parse_value(&mut self) -> Option<String> {
+    fn parse_value(&mut self) -> Result<String, ParseError> {
+        let (line, column) = self.get_position();
         let mut val: String = String::new();
 
-        while let Some(token) = self.peek() {
+        while let Ok(token) = self.peek() {
             match token.kind {
                 TokenKind::Identifier
                 | TokenKind::Dimension
@@ -198,39 +213,45 @@ impl<'a> Parser {
                 | TokenKind::ParenOpen
                 | TokenKind::ParenClose
                 | TokenKind::Comma
+                | TokenKind::String
                 | TokenKind::Percentage => {
                     val.push_str(&token.value);
-                    self.advance();
+                    self.advance()?;
                 }
                 TokenKind::Semicolon => break,
                 TokenKind::Whitespace => {
                     val.push(' ');
-                    self.advance();
+                    self.advance()?;
                 }
                 _ => break,
             }
         }
 
         if val.trim().is_empty() {
-            None
+            Err(ParseError::UnexpectedToken {
+                expected: TokenKind::Identifier,
+                found: self.peek()?.kind.clone(),
+                line: line,
+                column: column,
+            })
         } else {
-            Some(val.trim().to_string())
+            Ok(val.trim().to_string())
         }
     }
 
     fn parse_at_rule_params(&mut self) -> String {
         let mut params = String::new();
 
-        while let Some(token) = self.peek() {
+        while let Ok(token) = self.peek() {
             match token.kind {
                 TokenKind::CurlyOpen | TokenKind::Semicolon => break,
                 TokenKind::Whitespace => {
                     params.push(' ');
-                    self.advance();
+                    let _ = self.advance();
                 }
                 _ => {
                     params.push_str(&token.value);
-                    self.advance();
+                    let _ = self.advance();
                 }
             }
         }
@@ -238,64 +259,63 @@ impl<'a> Parser {
         params.trim().to_string()
     }
 
-    fn parse_comment(&mut self) -> Option<Node> {
+    fn parse_comment(&mut self) -> Result<Node, ParseError> {
         let (line, column) = self.get_position();
 
-        if let Some(token) = self.peek() {
-            let text = token.value.clone();
+        match self.peek() {
+            Ok(token) if token.kind == TokenKind::Comment => {
+                let text = token.value.clone();
+                self.advance()?;
 
-            if token.kind == TokenKind::Comment {
-                self.advance();
-
-                return Some(Node::new(
-                    NodeKind::Comment { text: text },
-                    line,
-                    column,
-                    None,
-                ));
+                Ok(Node::new(NodeKind::Comment { text }, line, column, None))
             }
+            Ok(token) => Err(ParseError::UnexpectedToken {
+                expected: TokenKind::Comment,
+                found: token.kind.clone(),
+                line,
+                column,
+            }),
+            Err(_) => Err(ParseError::UnexpectedEOF),
         }
-
-        None
     }
 
-    pub fn to_ast(&mut self) -> AST {
+    pub fn to_ast(&mut self) -> Result<AST, ParseError> {
         let mut body: Vec<Node> = Vec::new();
 
-        while let Some(token) = self.peek() {
+        while let Ok(token) = self.peek() {
             let kind = token.kind.clone();
-            let token_value = token.value.clone();
 
             match kind {
-                TokenKind::TypeSelector | TokenKind::ClassSelector | TokenKind::IdSelector => {
-                    if let Some(node) = self.parse_rule() {
-                        body.push(node);
-                    }
+                TokenKind::TypeSelector
+                | TokenKind::ClassSelector
+                | TokenKind::IdSelector
+                | TokenKind::UniversalSelector
+                | TokenKind::Identifier => {
+                    let node = self.parse_rule()?;
+                    body.push(node);
                 }
 
                 TokenKind::AtRule => {
-                    if let Some(node) = self.parse_at_rule() {
-                        body.push(node);
-                    }
+                    let node = self.parse_at_rule()?;
+                    body.push(node);
                 }
 
                 TokenKind::Whitespace => {
-                    self.advance();
+                    self.advance()?;
                 }
 
                 TokenKind::Comment => {
-                    if let Some(comment) = self.parse_comment() {
-                        body.push(comment);
-                    }
+                    let comment = self.parse_comment()?;
+                    body.push(comment);
                 }
+
                 _ => {
-                    self.advance();
-                    println!("Unknown token: '{:?}' value: '{}'", &kind, &token_value);
+                    self.advance()?;
                 }
             }
         }
 
-        AST { body }
+        Ok(AST { body })
     }
 }
 
@@ -333,24 +353,23 @@ pub enum NodeKind {
 
 #[derive(PartialEq)]
 enum BlockContext {
-    Rule,   // contains declarations
-    AtRule, // contains rules
+    Rule,
+    AtRule,
 }
 
 #[derive(Debug)]
-enum ParseError {
-    // !TODO - implement this within the parser
+pub enum ParseError {
     UnexpectedToken {
         expected: TokenKind,
         found: TokenKind,
         line: usize,
         column: usize,
     },
-    UnexpectedEOF,
     InvalidSelector {
         line: usize,
         column: usize,
     },
+    UnexpectedEOF,
 }
 
 impl std::fmt::Display for ParseError {
@@ -386,7 +405,7 @@ mod tests {
     fn test_to_ast_on_empty_tokens() {
         let tokens: Vec<Token> = Vec::new();
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
 
         assert_eq!(ast.body.len(), 0);
     }
@@ -396,7 +415,7 @@ mod tests {
         let input = "#block > .child { color: red; font-size: 20px; }";
         let tokens = Lexer::new(input).tokenize();
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
 
         let rule = &ast.body[0];
         let declarations = &rule.children.as_ref().unwrap();
@@ -433,7 +452,7 @@ mod tests {
         let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
 
         let rule = &ast.body[0];
         let declarations = &rule.children.as_ref().unwrap();
@@ -461,7 +480,7 @@ mod tests {
         let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
 
         let rule = &ast.body[0];
         let declarations = &rule.children.as_ref().unwrap();
@@ -490,7 +509,7 @@ mod tests {
         let tokens = lexer.tokenize();
 
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
 
         let rule = &ast.body[0];
         let declarations = &rule.children.as_ref().unwrap();
@@ -511,7 +530,7 @@ mod tests {
         let tokens = lexer.tokenize();
 
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
 
         let at_rule = &ast.body[0];
         let inner_rule = &at_rule.children.as_ref().unwrap()[0];
@@ -541,7 +560,7 @@ mod tests {
         let tokens = lexer.tokenize();
 
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
 
         let comment = &ast.body[0];
 
@@ -562,7 +581,7 @@ mod tests {
         let tokens = lexer.tokenize();
 
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
 
         let comment = &ast.body[0];
         let rule = &ast.body[1];
@@ -574,5 +593,27 @@ mod tests {
         assert_eq!(rule.column, 0);
         assert_eq!(declaration.line, 3);
         assert_eq!(declaration.column, 1);
+    }
+
+    #[test]
+    fn test_parse_single_quoted_string() {
+        let css = ".block { content: ''; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast().unwrap();
+
+        let rule = &ast.body[0];
+        let declarations = &rule.children.as_ref().unwrap();
+
+        println!("Declaration: {:?}", declarations[0]._type);
+
+        assert_eq!(
+            declarations[0]._type,
+            NodeKind::Declaration {
+                property: "content".to_string(),
+                value: "''".to_string()
+            }
+        );
     }
 }
