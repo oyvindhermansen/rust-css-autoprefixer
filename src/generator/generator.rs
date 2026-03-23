@@ -78,7 +78,7 @@ impl Generator {
         output
     }
 
-    fn generate_declaration(&self, node: &Node, property: &str, value: &str) -> String {
+    fn generate_declaration(&self, _node: &Node, property: &str, value: &str) -> String {
         let mut output: String = String::new();
 
         // setup for prefixing
@@ -99,7 +99,7 @@ impl Generator {
         output
     }
 
-    fn generate_comment(&mut self, node: &Node, text: &str) -> String {
+    fn generate_comment(&mut self, _node: &Node, text: &str) -> String {
         let mut output = String::new();
 
         output.push_str(text);
@@ -189,11 +189,24 @@ mod tests {
         let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
         let mut generator = Generator::new(ast);
         let output = generator.generate();
 
         assert_eq!(output, ".block {\n  color: red;\n}\n\n");
+    }
+
+    #[test]
+    fn test_generate_basic_rule_with_attribute_selector() {
+        let css = "input[type=\"email\"] { color: red; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast().unwrap();
+        let mut generator = Generator::new(ast);
+        let output = generator.generate();
+
+        assert_eq!(output, "input[type=\"email\"] {\n  color: red;\n}\n\n");
     }
 
     #[test]
@@ -202,7 +215,7 @@ mod tests {
         let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
         let mut generator = Generator::new(ast);
         let output = generator.generate();
         // assert the comment appears with a trailing newline
@@ -215,7 +228,7 @@ mod tests {
         let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
         let mut generator = Generator::new(ast);
         let output = generator.generate();
 
@@ -232,7 +245,7 @@ mod tests {
         let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
         let mut generator = Generator::new(ast);
         let output = generator.generate();
 
@@ -246,7 +259,7 @@ mod tests {
         let mut lexer = Lexer::new(css);
         let tokens = lexer.tokenize();
         let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast();
+        let ast = parser.to_ast().unwrap();
         let mut generator = Generator::new(ast);
         let output = generator.generate();
 
@@ -254,5 +267,20 @@ mod tests {
             output,
             "@media screen {\n  .block {\n    color: red;\n  }\n}\n\n"
         );
+    }
+
+    #[test]
+    fn test_generate_single_quoted_string() {
+        let css = ".block { content: ''; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast().unwrap();
+        let mut generator = Generator::new(ast);
+        let output = generator.generate();
+
+        println!("Output: {:?}", output);
+
+        assert_eq!(output, ".block {\n  content: '';\n}\n\n");
     }
 }

@@ -59,9 +59,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn consume_selector(&mut self) -> String {
-        let delimiters = [
-            ' ', '{', '}', ';', ':', '.', '#', '(', ')', ',', '+', '>', '~',
-        ];
+        let delimiters = SelectorDelimiter::all();
 
         self.consume_into_string(Some(&delimiters))
     }
@@ -97,6 +95,39 @@ impl<'a> Lexer<'a> {
                     tokens.push(Token::new(
                         TokenKind::Comment,
                         format!("/*{}*/", comment),
+                        start_line,
+                        start_column,
+                    ));
+                }
+
+                '[' => {
+                    self.advance();
+
+                    tokens.push(Token::new(
+                        TokenKind::BracketOpen,
+                        "[".to_string(),
+                        start_line,
+                        start_column,
+                    ));
+                }
+
+                ']' => {
+                    self.advance();
+
+                    tokens.push(Token::new(
+                        TokenKind::BracketClose,
+                        "]".to_string(),
+                        start_line,
+                        start_column,
+                    ));
+                }
+
+                '=' => {
+                    self.advance();
+
+                    tokens.push(Token::new(
+                        TokenKind::Equals,
+                        "=".to_string(),
                         start_line,
                         start_column,
                     ));
@@ -225,23 +256,44 @@ impl<'a> Lexer<'a> {
                         start_column,
                     ));
                 }
-                '"' => {
+
+                '\'' => {
                     self.advance();
-                    let val = self.consume_into_string(Some(&['"']));
-
-                    if self.peek() == Some('"') {
-                        self.advance();
-                    }
-
-                    let escaped_val = format!("\"{val}\"");
+                    let val = self.consume_into_string(Some(&['\'']));
+                    self.advance();
 
                     tokens.push(Token::new(
                         TokenKind::String,
-                        escaped_val,
+                        format!("'{val}'"),
                         start_line,
                         start_column,
                     ));
                 }
+
+                '"' => {
+                    self.advance();
+                    let val = self.consume_into_string(Some(&['"']));
+                    self.advance();
+
+                    tokens.push(Token::new(
+                        TokenKind::String,
+                        format!("\"{val}\""),
+                        start_line,
+                        start_column,
+                    ));
+                }
+
+                '*' => {
+                    self.advance();
+
+                    tokens.push(Token::new(
+                        TokenKind::UniversalSelector,
+                        c.to_string(),
+                        start_line,
+                        start_column,
+                    ));
+                }
+
                 '+' | '>' | '~' => {
                     self.advance();
 
@@ -309,15 +361,14 @@ impl<'a> Lexer<'a> {
                 }
 
                 c if c.is_ascii_alphabetic() || c == '-' || c == '_' => {
-                    // check for type selector
-                    let type_selectors = vec![
+                    const TYPE_SELECTORS: &[&str] = &[
                         "html", "body", "div", "section", "article", "main", "header", "footer",
                         "nav", "aside", "p", "span", "a", "form", "input", "button", "select",
                         "textarea",
                     ];
                     let ident = self.consume_selector();
 
-                    if type_selectors.contains(&ident.as_str()) {
+                    if TYPE_SELECTORS.contains(&ident.as_str()) {
                         tokens.push(Token::new(
                             TokenKind::TypeSelector,
                             ident,
@@ -376,8 +427,11 @@ impl Token {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
+    Equals,
     ParenOpen,
     ParenClose,
+    BracketOpen,
+    BracketClose,
     AtRule,
     Comment,
     Identifier,
@@ -386,6 +440,7 @@ pub enum TokenKind {
     ClassSelector,
     IdSelector,
     TypeSelector,
+    UniversalSelector,
     PseudoClass,
     PseudoElement,
     Combinator,
@@ -397,6 +452,69 @@ pub enum TokenKind {
     CurlyOpen,
     CurlyClose,
     Whitespace,
+}
+
+enum SelectorDelimiter {
+    WhiteSpace,
+    Dot,
+    CurlyOpen,
+    CurlyClose,
+    Colon,
+    Semicolon,
+    Hashtag,
+    ParenOpen,
+    ParenClose,
+    Comma,
+    Plus,
+    CaretRight,
+    Tilde,
+    BracketOpen,
+    BracketClose,
+    Equals,
+}
+
+impl SelectorDelimiter {
+    pub fn all() -> Vec<char> {
+        return vec![
+            Self::WhiteSpace.as_char(),
+            Self::Dot.as_char(),
+            Self::CurlyOpen.as_char(),
+            Self::CurlyClose.as_char(),
+            Self::Colon.as_char(),
+            Self::Semicolon.as_char(),
+            Self::Hashtag.as_char(),
+            Self::ParenOpen.as_char(),
+            Self::ParenClose.as_char(),
+            Self::Comma.as_char(),
+            Self::Plus.as_char(),
+            Self::CaretRight.as_char(),
+            Self::Tilde.as_char(),
+            Self::BracketOpen.as_char(),
+            Self::BracketClose.as_char(),
+            Self::Equals.as_char(),
+        ];
+    }
+
+    fn as_char(&self) -> char {
+        match self {
+            Self::WhiteSpace => ' ',
+            Self::Dot => '.',
+            Self::CurlyOpen => '{',
+            Self::CurlyClose => '}',
+            Self::Colon => ':',
+            Self::Semicolon => ';',
+            Self::Hashtag => '#',
+            Self::ParenOpen => '(',
+            Self::ParenClose => ')',
+            Self::Comma => ',',
+            Self::Plus => '+',
+            Self::CaretRight => '>',
+            Self::Tilde => '~',
+            Self::BracketOpen => '[',
+            Self::BracketClose => ']',
+            Self::Equals => '=',
+        }
+    }
 }
 
 // should cover all the tokens
@@ -671,5 +789,41 @@ mod tests {
         let tokens = lexer.tokenize();
 
         assert_eq_token_kind(&tokens, &TokenKind::String, 1);
+    }
+
+    #[test]
+    fn test_tokenize_attribute_selector() {
+        let css = "input[type=\"text\"] { color: blue; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        assert_eq!(tokens[0].kind, TokenKind::TypeSelector);
+        assert_eq!(tokens[0].value, "input");
+
+        assert_eq!(tokens[1].kind, TokenKind::BracketOpen);
+        assert_eq!(tokens[1].value, "[");
+
+        assert_eq!(tokens[2].kind, TokenKind::Identifier);
+        assert_eq!(tokens[2].value, "type");
+
+        assert_eq!(tokens[3].kind, TokenKind::Equals);
+        assert_eq!(tokens[3].value, "=");
+
+        assert_eq!(tokens[4].kind, TokenKind::String);
+        assert_eq!(tokens[4].value, "\"text\"");
+
+        assert_eq!(tokens[5].kind, TokenKind::BracketClose);
+        assert_eq!(tokens[5].value, "]");
+    }
+
+    #[test]
+    fn test_tokenize_single_quoted_string() {
+        let css = ".block { content: ''; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+
+        let string_token = tokens.iter().find(|t| t.kind == TokenKind::String).unwrap();
+
+        assert_eq!(string_token.value, "''");
     }
 }

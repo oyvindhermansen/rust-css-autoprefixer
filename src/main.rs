@@ -19,13 +19,20 @@ fn main() {
             let mut lexer = Lexer::new(&content);
             let tokens = lexer.tokenize();
 
+            println!(
+                "File content bytes around content: {:?}",
+                &content[content.find("content").unwrap()..content.find("content").unwrap() + 20]
+                    .as_bytes()
+            );
+
             let mut parser = Parser::new(tokens);
-            let ast = parser.to_ast();
-
-            let mut generator = Generator::new(ast);
-            let output = generator.generate();
-
-            println!("{:#?}", output);
+            match parser.to_ast() {
+                Ok(ast) => {
+                    let mut generator = Generator::new(ast);
+                    println!("{}", generator.generate());
+                }
+                Err(e) => eprintln!("Parse error: {}", e),
+            }
         }
         Err(e) => eprintln!("Error reading file at {:?}: {}", input_path, e),
     }
