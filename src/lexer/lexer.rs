@@ -59,9 +59,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn consume_selector(&mut self) -> String {
-        let delimiters = [
-            ' ', '{', '}', ';', ':', '.', '#', '(', ')', ',', '+', '>', '~', '[', ']', '=',
-        ];
+        let delimiters = SelectorDelimiter::all();
 
         self.consume_into_string(Some(&delimiters))
     }
@@ -342,15 +340,14 @@ impl<'a> Lexer<'a> {
                 }
 
                 c if c.is_ascii_alphabetic() || c == '-' || c == '_' => {
-                    // check for type selector
-                    let type_selectors = vec![
+                    const TYPE_SELECTORS: &[&str] = &[
                         "html", "body", "div", "section", "article", "main", "header", "footer",
                         "nav", "aside", "p", "span", "a", "form", "input", "button", "select",
                         "textarea",
                     ];
                     let ident = self.consume_selector();
 
-                    if type_selectors.contains(&ident.as_str()) {
+                    if TYPE_SELECTORS.contains(&ident.as_str()) {
                         tokens.push(Token::new(
                             TokenKind::TypeSelector,
                             ident,
@@ -433,6 +430,69 @@ pub enum TokenKind {
     CurlyOpen,
     CurlyClose,
     Whitespace,
+}
+
+enum SelectorDelimiter {
+    WhiteSpace,
+    Dot,
+    CurlyOpen,
+    CurlyClose,
+    Colon,
+    Semicolon,
+    Hashtag,
+    ParenOpen,
+    ParenClose,
+    Comma,
+    Plus,
+    CaretRight,
+    Tilde,
+    BracketOpen,
+    BracketClose,
+    Equals,
+}
+
+impl SelectorDelimiter {
+    pub fn all() -> Vec<char> {
+        return vec![
+            Self::WhiteSpace.as_char(),
+            Self::Dot.as_char(),
+            Self::CurlyOpen.as_char(),
+            Self::CurlyClose.as_char(),
+            Self::Colon.as_char(),
+            Self::Semicolon.as_char(),
+            Self::Hashtag.as_char(),
+            Self::ParenOpen.as_char(),
+            Self::ParenClose.as_char(),
+            Self::Comma.as_char(),
+            Self::Plus.as_char(),
+            Self::CaretRight.as_char(),
+            Self::Tilde.as_char(),
+            Self::BracketOpen.as_char(),
+            Self::BracketClose.as_char(),
+            Self::Equals.as_char(),
+        ];
+    }
+
+    fn as_char(&self) -> char {
+        match self {
+            Self::WhiteSpace => ' ',
+            Self::Dot => '.',
+            Self::CurlyOpen => '{',
+            Self::CurlyClose => '}',
+            Self::Colon => ':',
+            Self::Semicolon => ';',
+            Self::Hashtag => '#',
+            Self::ParenOpen => '(',
+            Self::ParenClose => ')',
+            Self::Comma => ',',
+            Self::Plus => '+',
+            Self::CaretRight => '>',
+            Self::Tilde => '~',
+            Self::BracketOpen => '[',
+            Self::BracketClose => ']',
+            Self::Equals => '=',
+        }
+    }
 }
 
 // should cover all the tokens
