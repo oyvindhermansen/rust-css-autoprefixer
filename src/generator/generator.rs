@@ -197,6 +197,19 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_basic_rule_with_attribute_selector() {
+        let css = "input[type=\"email\"] { color: red; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+        let mut generator = Generator::new(ast);
+        let output = generator.generate();
+
+        assert_eq!(output, "input[type=\"email\"] {\n  color: red;\n}\n\n");
+    }
+
+    #[test]
     fn test_generate_comment() {
         let css = "/* my comment */";
         let mut lexer = Lexer::new(css);

@@ -95,6 +95,7 @@ impl<'a> Parser {
     }
 
     fn parse_selector(&mut self) -> Option<String> {
+        println!("parse_selector starting, current token: {:?}", self.peek());
         let mut selector = String::new();
 
         while let Some(token) = self.peek() {
@@ -105,6 +106,7 @@ impl<'a> Parser {
                     self.advance();
                 }
                 _ => {
+                    println!("consuming token: {:?}", token.kind);
                     selector.push_str(&token.value);
                     self.advance();
                 }
@@ -335,6 +337,47 @@ enum BlockContext {
     AtRule, // contains rules
 }
 
+#[derive(Debug)]
+enum ParseError {
+    // !TODO - implement this within the parser
+    UnexpectedToken {
+        expected: TokenKind,
+        found: TokenKind,
+        line: usize,
+        column: usize,
+    },
+    UnexpectedEOF,
+    InvalidSelector {
+        line: usize,
+        column: usize,
+    },
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ParseError::UnexpectedToken {
+                expected,
+                found,
+                line,
+                column,
+            } => {
+                write!(
+                    f,
+                    "Expected {:?} but found {:?} at line {}, column {} ",
+                    expected, found, line, column
+                )
+            }
+            ParseError::UnexpectedEOF => {
+                write!(f, "Unexpected end of input")
+            }
+            ParseError::InvalidSelector { line, column } => {
+                write!(f, "Invalid selector at line {}, column {}", line, column)
+            }
+        }
+    }
+}
+
 mod tests {
     use super::*;
     use crate::lexer::Lexer;
@@ -399,6 +442,34 @@ mod tests {
             rule._type,
             NodeKind::Rule {
                 selector: "div:hover > form:nth-child(2)".to_string()
+            }
+        );
+        assert!(rule.children.is_some());
+
+        assert_eq!(
+            declarations[0]._type,
+            NodeKind::Declaration {
+                property: "color".to_string(),
+                value: "blue".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_selector_with_attributes() {
+        let css: &str = "input[type=\"email\"] { color: blue; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let ast = parser.to_ast();
+
+        let rule = &ast.body[0];
+        let declarations = &rule.children.as_ref().unwrap();
+
+        assert_eq!(
+            rule._type,
+            NodeKind::Rule {
+                selector: "input[type=\"email\"]".to_string()
             }
         );
         assert!(rule.children.is_some());
