@@ -19,12 +19,6 @@ fn main() {
             let mut lexer = Lexer::new(&content);
             let tokens = lexer.tokenize();
 
-            println!(
-                "File content bytes around content: {:?}",
-                &content[content.find("content").unwrap()..content.find("content").unwrap() + 20]
-                    .as_bytes()
-            );
-
             let mut parser = Parser::new(tokens);
             match parser.to_ast() {
                 Ok(ast) => {
