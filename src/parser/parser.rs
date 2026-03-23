@@ -220,7 +220,10 @@ impl<'a> Parser {
                 }
                 TokenKind::Semicolon => break,
                 TokenKind::Whitespace => {
-                    val.push(' ');
+                    if !val.ends_with(' ') {
+                        val.push(' ');
+                    }
+
                     self.advance()?;
                 }
                 _ => break,
