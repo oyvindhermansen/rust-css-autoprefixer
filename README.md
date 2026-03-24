@@ -122,6 +122,9 @@ src/
 
 ## Roadmap
 
-- [ ] CLI interface — accept input/output file paths as arguments
-- [ ] Better CSS feature parity
-- [ ] Larger test suite
+The main goal is now to refactor as I learn to recognize way to improve the Rust code.
+It will also be some time spent writing a larger test suite for all layers (lexer, parser and generator).
+Lastly i will try adding some features if I find them necessary to implement as a CSS language feature.
+
+And stay tuned. Since i've now got an interpreter that builds the CSS syntax from scratch, I can easily extend
+the language. Might be some easter eggs coming soon!
