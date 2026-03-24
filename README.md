@@ -97,11 +97,11 @@ cargo build
 
 ### Run
 
-```sh
-cargo run
-```
 
-Currently the program reads `src/input.css` and prints the prefixed output to stdout.
+```sh
+# Using example file paths here, but you get the gist.
+cargo run --input src/input.css --output src/output.css
+```
 
 ### Test
 
