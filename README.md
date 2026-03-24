@@ -27,19 +27,61 @@ Get cross-browser CSS:
 }
 ```
 
-## How it works
+## How It Works
 
-The prefixer processes CSS through a three-stage pipeline:
+The autoprefixer runs CSS through three stages: a **lexer**, **parser**, and **generator**.
 
+### Lexer
+
+The lexer tokenizes raw CSS into a flat list of typed tokens:
+
+**Input**
+```css
+.card {
+  transition: all 0.3s ease;
+}
 ```
-CSS text  →  Lexer  →  Tokens  →  Parser  →  AST  →  Generator  →  Prefixed CSS
+
+**Output**
+```
+ClassSelector  ".card"
+Whitespace     " "
+CurlyOpen      "{"
+Whitespace     "\n  "
+Identifier     "transition"
+Colon          ":"
+Whitespace     " "
+Identifier     "all"
+Whitespace     " "
+Dimension      "0.3s"
+Whitespace     " "
+Identifier     "ease"
+Semicolon      ";"
+Whitespace     "\n"
+CurlyClose     "}"
 ```
 
-**Lexer** — Tokenizes raw CSS text into a flat stream of typed tokens (selectors, properties, values, at-rules, comments, etc.) with source position tracking.
+### Parser
 
-**Parser** — Consumes the token stream and builds a hierarchical Abstract Syntax Tree (AST) that mirrors the natural nesting structure of CSS: rules contain declarations, at-rules can contain nested rules.
+The parser consumes tokens and builds a typed AST:
 
-**Generator** — Traverses the AST and produces the final CSS string. When it encounters a declaration whose property needs vendor prefixes, it emits the prefixed variants immediately before the standard property.
+**Output**
+```
+Rule { selector: ".card" }
+└── Declaration { property: "transition", value: "all 0.3s ease" }
+```
+
+### Generator
+
+The generator walks the AST and outputs prefixed CSS:
+
+**Output**
+```css
+.card {
+  -webkit-transition: all 0.3s ease;
+  transition: all 0.3s ease;
+}
+```
 
 ## Getting started
 
