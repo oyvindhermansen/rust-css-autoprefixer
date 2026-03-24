@@ -1,5 +1,5 @@
 [package]
-name = "css_autoprefixer_v2"
+name = "rust-css-autoprefixer"
 version = "0.1.0"
 edition = "2024"
 
