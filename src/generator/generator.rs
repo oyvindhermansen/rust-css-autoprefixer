@@ -179,9 +179,10 @@ impl Generator {
 }
 
 mod tests {
-    use crate::{lexer::Lexer, parser::Parser};
-
+    #[allow(unused_imports)]
     use super::*;
+    #[allow(unused_imports)]
+    use crate::{lexer::Lexer, parser::Parser};
 
     #[test]
     fn test_generate_basic_rule() {

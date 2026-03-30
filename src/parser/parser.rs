@@ -56,20 +56,16 @@ impl<'a> Parser {
     }
 
     fn parse_rule(&mut self) -> Result<Node, ParseError> {
-        let (line, column) = self.get_position();
         let selector = self.parse_selector()?;
         let children = self.parse_block(BlockContext::Rule)?;
 
         Ok(Node::new(
             NodeKind::Rule { selector: selector },
-            line,
-            column,
             Some(children),
         ))
     }
 
     fn parse_at_rule(&mut self) -> Result<Node, ParseError> {
-        let (line, column) = self.get_position();
         let name = self.advance()?.value.clone();
         self.skip_whitespace();
         let params = self.parse_at_rule_params();
@@ -80,8 +76,6 @@ impl<'a> Parser {
 
                 Ok(Node::new(
                     NodeKind::AtRule { name, params },
-                    line,
-                    column,
                     None, // No children on a at rule that ends with semi colon
                 ))
             }
@@ -89,12 +83,7 @@ impl<'a> Parser {
             TokenKind::CurlyOpen => {
                 let children = self.parse_block(BlockContext::AtRule)?;
 
-                Ok(Node::new(
-                    NodeKind::AtRule { name, params },
-                    line,
-                    column,
-                    Some(children),
-                ))
+                Ok(Node::new(NodeKind::AtRule { name, params }, Some(children)))
             }
             _ => Err(ParseError::UnexpectedEOF),
         }
@@ -162,7 +151,6 @@ impl<'a> Parser {
     }
 
     fn parse_declaration(&mut self) -> Result<Node, ParseError> {
-        let (line, column) = self.get_position();
         let property = self.parse_property()?;
 
         self.expect(TokenKind::Colon)?;
@@ -176,8 +164,6 @@ impl<'a> Parser {
                 property: property,
                 value: value,
             },
-            line,
-            column,
             None,
         ))
     }
@@ -270,7 +256,7 @@ impl<'a> Parser {
                 let text = token.value.clone();
                 self.advance()?;
 
-                Ok(Node::new(NodeKind::Comment { text }, line, column, None))
+                Ok(Node::new(NodeKind::Comment { text }, None))
             }
             Ok(token) => Err(ParseError::UnexpectedToken {
                 expected: TokenKind::Comment,
@@ -330,19 +316,12 @@ pub struct AST {
 #[derive(Debug, Clone)]
 pub struct Node {
     pub _type: NodeKind,
-    pub line: usize,
-    pub column: usize,
     pub children: Option<Vec<Node>>,
 }
 
 impl Node {
-    pub fn new(_type: NodeKind, line: usize, column: usize, children: Option<Vec<Node>>) -> Self {
-        Self {
-            _type,
-            line,
-            column,
-            children,
-        }
+    pub fn new(_type: NodeKind, children: Option<Vec<Node>>) -> Self {
+        Self { _type, children }
     }
 }
 
@@ -401,7 +380,9 @@ impl std::fmt::Display for ParseError {
 }
 
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
+    #[allow(unused_imports)]
     use crate::lexer::Lexer;
 
     #[test]
@@ -575,27 +556,6 @@ mod tests {
         );
 
         assert_eq!(ast.body.len(), 2);
-    }
-
-    #[test]
-    fn test_line_and_column_positions_is_correct() {
-        let css = "/* This is a comment */ \n.block { \n color: red; \n}";
-        let mut lexer = Lexer::new(css);
-        let tokens = lexer.tokenize();
-
-        let mut parser = Parser::new(tokens);
-        let ast = parser.to_ast().unwrap();
-
-        let comment = &ast.body[0];
-        let rule = &ast.body[1];
-        let declaration = &rule.children.as_ref().unwrap()[0]; // direct!
-
-        assert_eq!(comment.line, 1);
-        assert_eq!(comment.column, 0);
-        assert_eq!(rule.line, 2);
-        assert_eq!(rule.column, 0);
-        assert_eq!(declaration.line, 3);
-        assert_eq!(declaration.column, 1);
     }
 
     #[test]
