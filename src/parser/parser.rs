@@ -138,10 +138,10 @@ impl<'a> Parser {
                         BlockContext::Rule => self.parse_declaration(),
                         BlockContext::AtRule => self.parse_rule(),
                     };
-                    if let Ok(n) = node {
-                        children.push(n);
-                    } else {
-                        self.advance()?;
+
+                    match node {
+                        Ok(n) => children.push(n),
+                        Err(e) => return Err(e),
                     }
                 }
             }
@@ -179,7 +179,12 @@ impl<'a> Parser {
                     break;
                 }
                 _ => {
-                    return Err(ParseError::UnexpectedEOF);
+                    return Err(ParseError::UnexpectedToken {
+                        expected: TokenKind::Identifier,
+                        found: token.kind.clone(),
+                        line: token.line,
+                        column: token.column,
+                    });
                 }
             }
         }
@@ -287,6 +292,15 @@ impl<'a> Parser {
                 TokenKind::AtRule => {
                     let node = self.parse_at_rule()?;
                     body.push(node);
+                }
+
+                TokenKind::CurlyOpen => {
+                    let token = self.peek()?;
+
+                    return Err(ParseError::InvalidSelector {
+                        line: token.line,
+                        column: token.column,
+                    });
                 }
 
                 TokenKind::Whitespace => {
@@ -578,5 +592,42 @@ mod tests {
                 value: "''".to_string()
             }
         );
+    }
+
+    #[test]
+    fn test_parse_invalid_declaration_returns_unexpected_token() {
+        let css = ".block { ==invalid; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let result = parser.to_ast();
+
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            ParseError::UnexpectedToken {
+                expected, found, ..
+            } => {
+                assert_eq!(expected, TokenKind::Identifier);
+                assert_eq!(found, TokenKind::Equals);
+            }
+            e => panic!("Expected UnexpectedToken, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_selector_returns_invalid_selector() {
+        let css = "{ color: red; }";
+        let mut lexer = Lexer::new(css);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let result = parser.to_ast();
+
+        assert!(result.is_err());
+
+        match result.unwrap_err() {
+            ParseError::InvalidSelector { .. } => {}
+            e => panic!("Expected InvalidSelector, got {:?}", e),
+        }
     }
 }
