@@ -22,6 +22,10 @@ struct Args {
     /// Output file you want the prefixed code into
     #[arg(short, long)]
     output: String,
+
+    /// Output file you want the AST into
+    #[arg(short, long)]
+    ast: Option<String>,
 }
 
 impl Args {
@@ -68,6 +72,7 @@ fn main() {
             let mut parser = Parser::new(tokens);
             match parser.to_ast() {
                 Ok(ast) => {
+                    let ast_clone = &ast.clone();
                     let mut generator = Generator::new(ast);
                     let output = generator.generate();
 
@@ -77,6 +82,15 @@ fn main() {
                     match write_output_contents {
                         Ok(_) => println!("Finished vendor-prefixing your file."),
                         Err(e) => eprintln!("Error writing file at {:?}: {}", &output_path, e),
+                    }
+
+                    if let Some(ast_path) = args.ast {
+                        let ast_output = serde_json::to_string_pretty(ast_clone).unwrap();
+                        let write_ast_contents = fs::write(&ast_path, ast_output);
+                        match write_ast_contents {
+                            Ok(_) => println!("Finished generating AST."),
+                            Err(e) => eprintln!("Error writing AST file at {:?}: {}", &ast_path, e),
+                        }
                     }
                 }
                 Err(e) => eprintln!("Parse error: {}", e),

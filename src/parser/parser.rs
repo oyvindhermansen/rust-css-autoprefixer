@@ -1,4 +1,5 @@
 use crate::lexer::lexer::{Token, TokenKind};
+use serde::Serialize;
 
 #[derive(Debug)]
 pub struct Parser {
@@ -322,12 +323,12 @@ impl<'a> Parser {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Clone)]
 pub struct AST {
     pub body: Vec<Node>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Node {
     pub _type: NodeKind,
     pub children: Option<Vec<Node>>,
@@ -339,7 +340,7 @@ impl Node {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize)]
 pub enum NodeKind {
     Rule { selector: String },
     Declaration { property: String, value: String },
